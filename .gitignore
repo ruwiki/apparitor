@@ -1,0 +1,5 @@
+vendor/
+.env
+*.db
+__pycache__/
+config.toml
