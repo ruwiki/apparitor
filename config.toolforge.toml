@@ -1,0 +1,23 @@
+db = "/data/project/apparitor/apparitor.db"
+base_url = "https://apparitor.toolforge.org"
+repo_url = "https://github.com/ruwiki/apparitor"
+guild_id = 223183550965481473        # Сообщество Викимедиа
+report_channel_id = 995099313648701600   # #moderbot
+dry_run = true                       # только отчёты, ролей не трогать
+remove_on_confirm = ["🆕 new user"]
+
+[admit]
+min_edits = 0        # по readme критерий = наличие учётки и не заблокирован
+min_age_days = 0
+reject_blocked = true
+
+# admitted/apat — условия; остальные ключи = группы рувики → роль по readme
+[roles]
+admitted = "✔"
+apat = ""
+sysop = "Администратор"
+bureaucrat = "Бюрократ"
+interface-admin = "Администратор интерфейса"
+engineer = "Инженер"
+closer = "Подводящий итоги"
+steward = "Стюард"
