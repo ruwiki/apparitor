@@ -1,10 +1,11 @@
 """Чтение рувики через API. Только чтение, без аккаунта."""
 from __future__ import annotations
+import asyncio
 import datetime as dt
 import aiohttp
 
 API = "https://ru.wikipedia.org/w/api.php"
-UA = "Apparitor/0.1 (ruwiki ArbCom access bot; User:Carn)"
+UA = "Apparitor/0.1 (https://ru.wikipedia.org/wiki/User:Carn; access bot for ruwiki ArbCom Discord)"
 
 # группа рувики -> человекочитаемая метка
 LABELS = {
@@ -20,9 +21,14 @@ HIDDEN = {"*", "user", "autoconfirmed", "temporary-account-viewer", "uploader", 
 async def _get(session: aiohttp.ClientSession, **params) -> dict:
     params.setdefault("format", "json")
     params.setdefault("formatversion", "2")
-    async with session.get(API, params=params, headers={"User-Agent": UA}) as r:
-        r.raise_for_status()
-        return await r.json()
+    for attempt in range(4):
+        async with session.get(API, params=params, headers={"User-Agent": UA}) as r:
+            if r.status == 429:
+                await asyncio.sleep(2 ** attempt)
+                continue
+            r.raise_for_status()
+            return await r.json()
+    raise RuntimeError("ruwiki API: 429 после 4 попыток")
 
 
 async def user_info(session: aiohttp.ClientSession, name: str) -> dict | None:
