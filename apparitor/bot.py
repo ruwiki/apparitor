@@ -100,8 +100,13 @@ class Apparitor(discord.Client):
         """Строка в служебный канал сервера. В холостом режиме — единственный выход."""
         cid = self.gcfg(guild_id).get("report_channel_id") or 0
         ch = self.get_channel(cid) if cid else None
-        if ch:
+        if not ch:
+            log.warning("сервер %s: служебный канал %s не найден; отчёт: %s", guild_id, cid, text)
+            return
+        try:
             await ch.send(text[:1900])
+        except discord.Forbidden:
+            log.warning("сервер %s: нет права писать в #%s; отчёт: %s", guild_id, ch.name, text)
 
     # --- правила ------------------------------------------------------------
     def admissible(self, info: dict) -> tuple[bool, str]:
@@ -158,7 +163,7 @@ class Apparitor(discord.Client):
         add = [r for r in add if r is not None]
         rem = [r for r in member.roles if r.name in (self.managed_roles(member.guild.id) - want)]
         dry = self.cfg.get("dry_run", True)
-        if add or rem or reason:
+        if add or rem or reason or dry:   # вхолостую отчитываемся всегда, иначе тест не виден
             await self.report(member.guild.id, f"{'[холостой] ' if dry else ''}{member.mention} ↔ **{info['name']}** "
                               f"({', '.join(info['labels']) or 'без флагов'}"
                               f"{'; отказ: ' + reason if reason else ''}): "
@@ -202,7 +207,7 @@ def register(bot: Apparitor):
         state = new_state()
         await bot.store.set_pending(inter.user.id, inter.guild_id, "", state)
         await inter.response.send_message(
-            f"Войдите своей учёткой Викимедиа по ссылке (30 минут): {base}/oauth/start?s={state}", ephemeral=True)
+            f"Войдите своей учёткой Викимедиа по ссылке (30 минут): <{base}/oauth/start?s={state}>", ephemeral=True)
         await bot.report(inter.guild_id, f"/auth от {inter.user.mention}")
 
     @tree.command(name="verify", description="Привязать вики-аккаунт рувики без OAuth: код в описании правки")
