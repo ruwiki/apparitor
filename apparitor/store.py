@@ -9,6 +9,7 @@ create table if not exists links (
   method text not null, evidence text);
 create table if not exists pending (
   discord_id integer primary key, wiki_name text not null, code text not null, issued_at text not null);
+create index if not exists pending_code on pending(code);
 create table if not exists log (
   ts text, actor text, action text, target text, detail text);
 """
@@ -32,6 +33,12 @@ class Store:
                             (discord_id,)).fetchone()
         return r and {"wiki_name": r[0], "code": r[1],
                       "issued_at": dt.datetime.strptime(r[2], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=dt.timezone.utc)}
+
+    def pending_by_state(self, state: str):
+        """Для OAuth: state хранится в поле code, wiki_name пустое."""
+        r = self.db.execute("select discord_id, issued_at from pending where code=?", (state,)).fetchone()
+        return r and {"discord_id": r[0],
+                      "issued_at": dt.datetime.strptime(r[1], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=dt.timezone.utc)}
 
     def link(self, discord_id: int, wiki_name: str, method: str, evidence: str) -> None:
         self.db.execute("insert or replace into links values (?,?,?,?,?)",

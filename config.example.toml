@@ -1,5 +1,7 @@
 # Скопировать в config.toml. Токен бота — в .env (DISCORD_TOKEN=...), не сюда.
 db = "apparitor.db"
+base_url = ""                 # https://apparitor.toolforge.org — для ссылок /auth
+repo_url = ""
 report_channel_id = 0         # служебный канал для отчётов о действиях
 dry_run = true                # true = только отчёты, ролей не трогать
 remove_on_confirm = []        # роли, снимаемые после подтверждения (напр. "🆕 new user")

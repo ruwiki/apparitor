@@ -11,6 +11,7 @@ from discord import app_commands
 
 from . import wiki
 from .store import Store
+from .web import new_state
 
 
 def load_config(path: str = "config.toml") -> dict:
@@ -76,6 +77,21 @@ class Apparitor(discord.Client):
                 return False, f"аккаунту {age} дн. < {a['min_age_days']}"
         return True, "ок"
 
+    async def after_link(self, discord_id: int, wiki_name: str):
+        """После привязки: критерии впуска и роли. Возвращает (added, removed, текст отказа|None)."""
+        guild = self.get_guild(self.cfg["guild_id"])
+        member = guild.get_member(discord_id) or await guild.fetch_member(discord_id)
+        info = await wiki.user_info(self.http_session, wiki_name)
+        if not info:
+            return [], [], f"В рувики нет участника {wiki_name} (учётка глобальная, но на рувики не заходила)."
+        ok, why = self.admissible(info)
+        if not ok:
+            self.store.log(str(discord_id), "reject", info["name"], why)
+            await self.report(f"впуск {member.mention} ↔ {info['name']}: отказ — {why}")
+            return [], [], f"Критерии впуска не пройдены: {why}."
+        added, removed, missing = await self.apply_roles(member, info)
+        return added, removed, None
+
     async def apply_roles(self, member: discord.Member, info: dict) -> tuple[list[str], list[str]]:
         """Выдаёт нужные, снимает ненужные из управляемого набора. Возвращает (added, removed, missing)."""
         managed = {v for v in self.cfg["roles"].values() if v} | set(self.cfg.get("remove_on_confirm", []))
@@ -110,7 +126,19 @@ def fmt(info: dict) -> str:
 def register(bot: Apparitor):
     tree = bot.tree
 
-    @tree.command(name="verify", description="Привязать вики-аккаунт рувики: получить код для правки")
+    @tree.command(name="auth", description="Подтвердить вики-аккаунт входом через Мету (OAuth)")
+    async def auth(inter: discord.Interaction):
+        base = bot.cfg.get("base_url", "")
+        if not base or not os.environ.get("OAUTH_CLIENT_ID"):
+            await inter.response.send_message("OAuth ещё не настроен, используйте `/verify <имя>`.", ephemeral=True)
+            return
+        state = new_state()
+        bot.store.set_pending(inter.user.id, "", state)
+        await bot.report(f"/auth от {inter.user.mention}")
+        await inter.response.send_message(
+            f"Войдите своей учёткой Викимедиа по ссылке (30 минут): {base}/oauth/start?s={state}", ephemeral=True)
+
+    @tree.command(name="verify", description="Привязать вики-аккаунт рувики без OAuth: код в описании правки")
     @app_commands.describe(wiki_name="Имя участника в рувики")
     async def verify(inter: discord.Interaction, wiki_name: str):
         await bot.report(f"/verify от {inter.user.mention}: «{wiki_name}»")
@@ -128,7 +156,7 @@ def register(bot: Apparitor):
     @tree.command(name="confirm", description="Проверить правку с кодом и получить роли")
     async def confirm(inter: discord.Interaction):
         p = bot.store.get_pending(inter.user.id)
-        if not p:
+        if not p or not p["wiki_name"]:
             await inter.response.send_message("Сначала `/verify <имя>`.", ephemeral=True)
             return
         if dt.datetime.now(dt.timezone.utc) - p["issued_at"] > dt.timedelta(minutes=30):
@@ -184,13 +212,14 @@ def register(bot: Apparitor):
         await inter.followup.send("\n".join(lines) or "Изменений нет.", ephemeral=True)
 
 
-def main():
-    cfg = load_config()
-    token = os.environ.get("DISCORD_TOKEN")
-    if not token and os.path.exists(".env"):
+def read_token() -> str:
+    """DISCORD_TOKEN из окружения (Toolforge envvars) или локального .env; .env также подгружает OAUTH_*."""
+    if os.path.exists(".env"):
         for line in open(".env"):
-            if line.startswith("DISCORD_TOKEN="):
-                token = line.split("=", 1)[1].strip()
+            if "=" in line and not line.startswith("#"):
+                k, v = line.strip().split("=", 1)
+                os.environ.setdefault(k, v)
+    token = os.environ.get("DISCORD_TOKEN")
     if not token:
         raise SystemExit("DISCORD_TOKEN не задан (.env или окружение)")
-    Apparitor(cfg).run(token, log_handler=None)
+    return token
