@@ -130,57 +130,80 @@ def register(bot: Apparitor):
                 lines.append(f"{name}: {text}")
         await inter.followup.send("\n".join(lines)[:1900] or "Изменений нет.", ephemeral=True)
 
-    @tree.command(
-        name="audit", description="Сопоставить всех участников сервера с рувики по нику (только Manage Roles)"
-    )
+    @tree.command(name="audit", description="Сопоставить всех участников сервера с рувики (только Manage Roles)")
     @app_commands.guild_only()
     @app_commands.checks.has_permissions(manage_roles=True)
     async def audit(inter: discord.Interaction):
+        """Полный отчёт по ЭТОМУ серверу, файлом: расхождения по подтверждённым связкам, расхождения по нику
+        (не подтверждено — может быть чужой участник с таким же ником), не сопоставленные. Ролей не трогает."""
         await inter.response.defer(ephemeral=True)
         guild = inter.guild
         members = [m for m in guild.members if not m.bot]
         if len(members) < max(1, (guild.member_count or 1) // 2):  # кэш пуст или неполон — тянем список
             members = [m async for m in guild.fetch_members(limit=None) if not m.bot]
         linked = dict(await bot.store.all_links())
-        # кандидат = привязанное имя, иначе ник на сервере, иначе отображаемое имя, иначе логин
+        gcfg = bot.gcfg(guild.id)
+        managed = rules.managed_roles(gcfg)
+        roles_map = gcfg.get("roles", {})
+        global_role_names = {roles_map[k] for k in roles_map if k in wiki.GLOBAL_KEEP and roles_map[k]}
+        # кандидат = подтверждённое имя, иначе ник на сервере, иначе отображаемое имя, иначе логин
         cand = {m.id: (linked.get(m.id) or m.nick or m.global_name or m.name) for m in members}
-        infos = await wiki.users_info(bot.http_session, list(set(cand.values())), with_global=False)
-        gcfg, managed = bot.gcfg(guild.id), rules.managed_roles(bot.gcfg(guild.id))
-        rows, mism, n_linked, n_match, n_none, new_cands = [], [], 0, 0, 0, []
+        # глобальные группы (стюард и т.п.) запрашиваем только там, где они могут повлиять на роли
+        need_global = {cand[m.id] for m in members if {r.name for r in m.roles} & global_role_names}
+        infos = await wiki.users_info(
+            bot.http_session, [n for n in set(cand.values()) if n not in need_global], with_global=False
+        )
+        infos |= await wiki.users_info(bot.http_session, list(need_global), with_global=True)
+        verified, by_nick, unmatched, new_cands, n_linked, n_nick = [], [], [], [], 0, 0
         for m in members:
             name, info = cand[m.id], infos.get(cand[m.id])
-            src = "oauth" if m.id in linked else ("nick" if info else "—")
+            have = {r.name for r in m.roles}
+            mine = ", ".join(sorted(have & managed)) or "—"
+            who = m.display_name + (f" (логин {m.name})" if m.name != m.display_name else "")
+            if not info:
+                unmatched.append(f"{who}; роли бота: {mine}")
+                continue
             if m.id in linked:
                 n_linked += 1
-            elif info:
-                n_match += 1
-                new_cands.append((m.id, info["name"], "nick"))
             else:
-                n_none += 1
-            have = {r.name for r in m.roles}
-            d = rules.decide(bot.cfg["admit"], gcfg, info, have) if info else None
-            flag = "" if not d else ("=" if not d["add"] and not d["remove"] else "≠")
-            if flag == "≠":
-                mism.append(
-                    f"{m.display_name} ↔ {info['name']}: есть {sorted(have & managed) or '—'}, надо {d['want'] or '—'}"
-                )
-            labels = ", ".join(info["labels"]) if info else "—"
-            rows.append(
-                f"{m.display_name}\t{name}\t{src}\t{labels}\t{'; '.join(sorted(have & managed)) or '—'}\t{flag}"
+                n_nick += 1
+                new_cands.append((m.id, info["name"], "nick"))
+            d = rules.decide(bot.cfg["admit"], gcfg, info, have)
+            if not d["add"] and not d["remove"]:
+                continue
+            why = f"; отказ: {d['why']}" if not d["ok"] else ""
+            line = (
+                f"{who} ↔ {info['name']} ({', '.join(info['labels']) or 'без флагов'}{why}): "
+                f"роли бота сейчас {mine}; бот выдал бы {', '.join(d['add']) or '—'}, снял бы {', '.join(d['remove']) or '—'}"
             )
+            (verified if m.id in linked else by_nick).append(line)
         if new_cands:
             await bot.store.set_candidates(guild.id, new_cands)
         head = (
-            f"Аудит {guild.name}: участников {len(members)}; привязано через OAuth {n_linked}, "
-            f"совпадение по нику {n_match}, не сопоставлено {n_none}; расхождений ролей {len(mism)}."
+            f"Аудит сервера {guild.name}: участников {len(members)}; связка подтверждена (OAuth/правка) {n_linked}, "
+            f"совпадение только по нику {n_nick}, не сопоставлено {len(unmatched)}. "
+            f"Расхождений: по подтверждённым {len(verified)}, по нику {len(by_nick)}. Роли не менялись."
         )
-        body = "участник\tкандидат в вики\tисточник\tфлаги\tуправляемые роли\tсовпадение\n" + "\n".join(rows)
-        f = discord.File(io.BytesIO(body.encode()), filename=f"audit-{guild.id}.tsv")
-        sent = await bot.report(guild.id, head + ("\nРасхождения:\n" + "\n".join(mism[:25]) if mism else ""), file=f)
+        body = "\n".join(
+            [
+                head,
+                "",
+                f"== Расхождения по подтверждённым связкам ({len(verified)}) — человек тот; ошибка возможна в карте ролей ==",
+                *(verified or ["нет"]),
+                "",
+                f"== Расхождения по нику ({len(by_nick)}) — НЕ подтверждено: ник мог совпасть с чужим участником рувики ==",
+                *(by_nick or ["нет"]),
+                "",
+                f"== Не сопоставлены ({len(unmatched)}) — ник не совпал ни с одним участником рувики ==",
+                *(unmatched or ["нет"]),
+            ]
+        )
+        f = discord.File(io.BytesIO(body.encode()), filename=f"audit-{guild.id}.txt")
+        sent = await bot.report(guild.id, head, file=f)
         tail = (
-            "\nПолная таблица — в служебном канале."
+            "\nПолный отчёт файлом — в служебном канале."
             if sent
-            else "\nВ служебный канал написать не удалось (нет права?), таблица не отправлена."
+            else "\nВ служебный канал написать не удалось (нет права?), файл не отправлен."
         )
         await inter.followup.send(head + tail, ephemeral=True)
         await bot.store.log(str(inter.user.id), "audit", str(guild.id), head)
