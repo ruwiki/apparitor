@@ -20,6 +20,11 @@ def admissible(admit: dict, info: dict) -> tuple[bool, str]:
     return True, "ок"
 
 
+# Старший статус заменяет младший: ПИ+ вместо ПИ (решение владельца 26.09). Действует, только если старшему
+# на сервере сопоставлена роль; иначе младшая роль остаётся.
+SUPERSEDES = {"closer-plus": "closer"}
+
+
 def managed_roles(gcfg: dict) -> set[str]:
     """Роли, которыми бот распоряжается на сервере: все из карты + снимаемые после подтверждения."""
     return {v for v in gcfg.get("roles", {}).values() if v} | set(gcfg.get("remove_on_confirm", []))
@@ -32,7 +37,9 @@ def wanted_roles(gcfg: dict, info: dict) -> list[str]:
     out = [r["admitted"]] if r.get("admitted") else []
     if info["apat"] and r.get("apat"):
         out.append(r["apat"])
-    out += [v for k, v in r.items() if k not in ("admitted", "apat") and v and k in info["groups"]]
+    groups = set(info["groups"])
+    groups -= {low for high, low in SUPERSEDES.items() if high in groups and r.get(high)}
+    out += [v for k, v in r.items() if k not in ("admitted", "apat") and v and k in groups]
     return out
 
 

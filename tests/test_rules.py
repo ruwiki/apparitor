@@ -23,13 +23,14 @@ def test_wanted_roles_per_guild(cfg):
     i = info(groups=["closer", "closer-plus", "vandalfighter", "clerk", "techdeleter", "vrts"])
     assert rules.wanted_roles(guild_cfg(cfg, RUWIKI), i) == [
         "аутентифицирован(а)",
-        "ПИ",
         "ПИ+",
         "Вандалоборец",
         "Клерк",
         "ТУ",
-    ], "статусы из JSON гаджета; vrts = '' не выдаётся"
+    ], "статусы из JSON гаджета; ПИ+ заменяет ПИ; vrts = '' не выдаётся"
     assert rules.wanted_roles(guild_cfg(cfg, CLERKS), i) == ["Клерк"]
+    g = dict(guild_cfg(cfg, RUWIKI), roles=dict(guild_cfg(cfg, RUWIKI)["roles"], **{"closer-plus": ""}))
+    assert "ПИ" in rules.wanted_roles(g, i), "ПИ+ не сопоставлен роли — ПИ остаётся"
 
 
 def test_managed_and_diff(cfg):
