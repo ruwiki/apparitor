@@ -4,13 +4,16 @@
 envvars TOOL_TOOLSDB_USER/PASSWORD) или "sqlite" (только локальная отладка). Драйверы синхронные,
 поэтому все публичные методы async и выполняют запрос в отдельном потоке под замком —
 зависший ToolsDB не останавливает heartbeat Discord."""
+
 from __future__ import annotations
+
 import asyncio
+import contextlib
+import datetime as dt
 import logging
 import os
 import sqlite3
 import threading
-import datetime as dt
 
 log = logging.getLogger("apparitor.store")
 TOOLSDB_HOST = "tools.db.svc.wikimedia.cloud"
@@ -30,11 +33,11 @@ INDEXES = ["create index {ine} pending_code on pending (code)"]
 
 
 def now_ts() -> str:
-    return dt.datetime.now(dt.timezone.utc).strftime(TS_FMT)
+    return dt.datetime.now(dt.UTC).strftime(TS_FMT)
 
 
 def parse_ts(s: str) -> dt.datetime:
-    return dt.datetime.strptime(s, TS_FMT).replace(tzinfo=dt.timezone.utc)
+    return dt.datetime.strptime(s, TS_FMT).replace(tzinfo=dt.UTC)
 
 
 class Store:
@@ -49,7 +52,9 @@ class Store:
         elif self.kind != "sqlite":
             raise SystemExit(f"db.kind: ожидается toolsdb или sqlite, получено {self.kind!r}")
         elif os.environ.get("PORT"):
-            raise SystemExit("db.kind=sqlite при заданном PORT: на Toolforge sqlite не годится (NFS, потеря при рестарте)")
+            raise SystemExit(
+                "db.kind=sqlite при заданном PORT: на Toolforge sqlite не годится (NFS, потеря при рестарте)"
+            )
         self._connect()
         self._init_schema()
 
@@ -57,10 +62,19 @@ class Store:
     def _connect(self):
         if self.kind == "toolsdb":
             import pymysql
+
             user = os.environ["TOOL_TOOLSDB_USER"]
-            self.db = pymysql.connect(host=TOOLSDB_HOST, user=user, password=os.environ["TOOL_TOOLSDB_PASSWORD"],
-                                      database=f"{user}__apparitor", charset="utf8mb4", autocommit=True,
-                                      connect_timeout=5, read_timeout=10, write_timeout=10)
+            self.db = pymysql.connect(
+                host=TOOLSDB_HOST,
+                user=user,
+                password=os.environ["TOOL_TOOLSDB_PASSWORD"],
+                database=f"{user}__apparitor",
+                charset="utf8mb4",
+                autocommit=True,
+                connect_timeout=5,
+                read_timeout=10,
+                write_timeout=10,
+            )
         else:
             self.db = sqlite3.connect(self.sqlite_path, isolation_level=None, check_same_thread=False)
 
@@ -72,7 +86,7 @@ class Store:
         for idx in INDEXES:
             try:  # MariaDB и sqlite понимают IF NOT EXISTS; на всякий случай не падаем
                 self._exec(idx.format(ine="if not exists"))
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 log.warning("индекс: %s", e)
 
     def _exec(self, sql: str, params: tuple | None = None):
@@ -80,6 +94,7 @@ class Store:
         with self._lock:
             if self.kind == "toolsdb":
                 import pymysql
+
                 sql = sql.replace("?", "%s")
                 for attempt in (1, 2):
                     try:
@@ -90,10 +105,8 @@ class Store:
                         if attempt == 2:
                             raise
                         log.warning("ToolsDB: %s — переподключаюсь", e)
-                        try:
+                        with contextlib.suppress(Exception):
                             self.db.close()
-                        except Exception:  # noqa: BLE001
-                            pass
                         self._connect()
             return self.db.execute(sql, params or ())
 
@@ -132,35 +145,49 @@ class Store:
         try:
             await self._run(self._exec, "select 1")
             return True
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             log.error("health: %s", e)
             return False
 
     async def set_pending(self, discord_id: int, guild_id: int, wiki_name: str, code: str) -> None:
-        await self._run(self._exec, self._upsert_sql("pending", "discord_id, guild_id, wiki_name, code, issued_at", 5),
-                        (discord_id, guild_id, wiki_name, code, now_ts()))
+        await self._run(
+            self._exec,
+            self._upsert_sql("pending", "discord_id, guild_id, wiki_name, code, issued_at", 5),
+            (discord_id, guild_id, wiki_name, code, now_ts()),
+        )
 
     async def get_pending(self, discord_id: int):
-        r = await self._run(lambda: self._exec(
-            "select guild_id, wiki_name, code, issued_at from pending where discord_id=?", (discord_id,)).fetchone())
+        r = await self._run(
+            lambda: self._exec(
+                "select guild_id, wiki_name, code, issued_at from pending where discord_id=?", (discord_id,)
+            ).fetchone()
+        )
         return r and {"guild_id": int(r[0]), "wiki_name": r[1], "code": r[2], "issued_at": parse_ts(r[3])}
 
     async def pending_by_state(self, state: str):
         """Для OAuth: state хранится в поле code, wiki_name пустое."""
-        r = await self._run(lambda: self._exec(
-            "select discord_id, guild_id, issued_at from pending where code=?", (state,)).fetchone())
+        r = await self._run(
+            lambda: self._exec("select discord_id, guild_id, issued_at from pending where code=?", (state,)).fetchone()
+        )
         return r and {"discord_id": int(r[0]), "guild_id": int(r[1]), "issued_at": parse_ts(r[2])}
 
     async def link(self, discord_id: int, wiki_name: str, method: str, evidence: str) -> None:
         """Связка и снятие ожидания — одной транзакцией."""
-        await self._run(self._tx, [
-            (self._upsert_sql("links", "discord_id, wiki_name, verified_at, method, evidence", 5),
-             (discord_id, wiki_name, now_ts(), method, evidence)),
-            ("delete from pending where discord_id=?", (discord_id,)),
-        ])
+        await self._run(
+            self._tx,
+            [
+                (
+                    self._upsert_sql("links", "discord_id, wiki_name, verified_at, method, evidence", 5),
+                    (discord_id, wiki_name, now_ts(), method, evidence),
+                ),
+                ("delete from pending where discord_id=?", (discord_id,)),
+            ],
+        )
 
     async def wiki_of(self, discord_id: int) -> str | None:
-        r = await self._run(lambda: self._exec("select wiki_name from links where discord_id=?", (discord_id,)).fetchone())
+        r = await self._run(
+            lambda: self._exec("select wiki_name from links where discord_id=?", (discord_id,)).fetchone()
+        )
         return r and r[0]
 
     async def all_links(self) -> list[tuple[int, str]]:
@@ -174,5 +201,8 @@ class Store:
         await self._run(self._tx, [(sql, (guild_id, did, name, src, ts)) for did, name, src in rows])
 
     async def log(self, actor: str, action: str, target: str, detail: str = "") -> None:
-        await self._run(self._exec, "insert into log (ts, actor, action, target, detail) values (?,?,?,?,?)",
-                        (now_ts(), actor, action, target, detail))
+        await self._run(
+            self._exec,
+            "insert into log (ts, actor, action, target, detail) values (?,?,?,?,?)",
+            (now_ts(), actor, action, target, detail),
+        )

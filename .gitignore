@@ -3,3 +3,4 @@ vendor/
 *.db
 __pycache__/
 config.toml
+tools/

@@ -1,11 +1,13 @@
 """Discord-часть: slash-команды. Без Message Content Intent — текст сообщений боту не нужен."""
+
 from __future__ import annotations
+
+import datetime as dt
 import io
 import logging
 import os
 import secrets
 import tomllib
-import datetime as dt
 
 import aiohttp
 import discord
@@ -31,7 +33,7 @@ def load_config(path: str = "config.toml") -> dict:
 class Apparitor(discord.Client):
     def __init__(self, cfg: dict, members_intent: bool = True):
         intents = discord.Intents.default()  # message_content не включаем никогда
-        intents.members = members_intent      # для входа участников и обхода списка; нужен тумблер в портале
+        intents.members = members_intent  # для входа участников и обхода списка; нужен тумблер в портале
         super().__init__(intents=intents)
         self.cfg = cfg
         self.store = Store(cfg.get("db", {}))
@@ -70,8 +72,11 @@ class Apparitor(discord.Client):
 
     async def on_command_error(self, inter: discord.Interaction, error: Exception):
         log.exception("команда %s: %s", inter.command and inter.command.name, error)
-        text = ("Нужно право Manage Roles." if isinstance(error, app_commands.MissingPermissions)
-                else "Ошибка при выполнении; запись есть в логе бота.")
+        text = (
+            "Нужно право Manage Roles."
+            if isinstance(error, app_commands.MissingPermissions)
+            else "Ошибка при выполнении; запись есть в логе бота."
+        )
         try:
             if inter.response.is_done():
                 await inter.followup.send(text, ephemeral=True)
@@ -118,7 +123,7 @@ class Apparitor(discord.Client):
             return False, f"правок {info['editcount']} < {a['min_edits']}"
         if a.get("min_age_days") and info["registration"]:
             reg = parse_ts(info["registration"])
-            age = (dt.datetime.now(dt.timezone.utc) - reg).days
+            age = (dt.datetime.now(dt.UTC) - reg).days
             if age < a["min_age_days"]:
                 return False, f"аккаунту {age} дн. < {a['min_age_days']}"
         return True, "ок"
@@ -142,7 +147,11 @@ class Apparitor(discord.Client):
         Вызывается из /confirm, OAuth-колбэка и /sync. Возвращает текст для человека."""
         gid = member.guild.id
         if not info:
-            await self.report(gid, f"{member.mention}: в рувики нет такого участника" + (f" ({wiki_name})" if self.gcfg(gid).get("report_names") else ""))
+            await self.report(
+                gid,
+                f"{member.mention}: в рувики нет такого участника"
+                + (f" ({wiki_name})" if self.gcfg(gid).get("report_names") else ""),
+            )
             return f"В рувики нет участника {wiki_name}."
         ok, why = self.admissible(info)
         want = set(self.wanted_roles(gid, info)) if ok else set()
@@ -152,35 +161,45 @@ class Apparitor(discord.Client):
             return f"Критерии впуска не пройдены: {why}."
         if self.cfg.get("dry_run", True):
             return "Холостой режим: роли не менялись, отчёт в служебном канале."
-        return f"Роли: выдать {added or '—'}, снять {removed or '—'}" + (f", на сервере нет {missing}" if missing else "")
+        return f"Роли: выдать {added or '—'}, снять {removed or '—'}" + (
+            f", на сервере нет {missing}" if missing else ""
+        )
 
-    async def apply_roles(self, member: discord.Member, info: dict, want: set[str], reason: str
-                          ) -> tuple[list[str], list[str], list[str]]:
+    async def apply_roles(
+        self, member: discord.Member, info: dict, want: set[str], reason: str
+    ) -> tuple[list[str], list[str], list[str]]:
         """Приводит управляемые роли участника к `want`. Возвращает (added, removed, missing)."""
         have = {r.name for r in member.roles}
         add_names = sorted(want - have)
         add = [discord.utils.get(member.guild.roles, name=n) for n in add_names]
-        missing = [n for n, r in zip(add_names, add) if r is None]
+        missing = [n for n, r in zip(add_names, add, strict=True) if r is None]
         add = [r for r in add if r is not None]
         rem = [r for r in member.roles if r.name in (self.managed_roles(member.guild.id) - want)]
         dry = self.cfg.get("dry_run", True)
-        if add or rem or reason or dry:   # вхолостую отчитываемся всегда, иначе тест не виден
+        if add or rem or reason or dry:  # вхолостую отчитываемся всегда, иначе тест не виден
             gc = self.gcfg(member.guild.id)
-            if gc.get("report_names", False):   # только в закрытый канал: связка ник ↔ вики-аккаунт
+            if gc.get("report_names", False):  # только в закрытый канал: связка ник ↔ вики-аккаунт
                 who = f"{member.mention} ↔ **{info['name']}** ({', '.join(info['labels']) or 'без флагов'})"
-            else:                                # публичный канал: без имени в вики и без флагов
+            else:  # публичный канал: без имени в вики и без флагов
                 who = f"{member.mention}: вики-аккаунт подтверждён"
-            await self.report(member.guild.id, f"{'[холостой] ' if dry else ''}{who}"
-                              f"{'; отказ: ' + reason if reason else ''}: "
-                              f"выдать {[r.name for r in add] or '—'}, снять {[r.name for r in rem] or '—'}"
-                              + (f", нет ролей {missing}" if missing else ""))
+            await self.report(
+                member.guild.id,
+                f"{'[холостой] ' if dry else ''}{who}"
+                f"{'; отказ: ' + reason if reason else ''}: "
+                f"выдать {[r.name for r in add] or '—'}, снять {[r.name for r in rem] or '—'}"
+                + (f", нет ролей {missing}" if missing else ""),
+            )
         if not dry:
             if add:
                 await member.add_roles(*add, reason=f"Apparitor: {info['name']} {info['labels']}")
             if rem:
                 await member.remove_roles(*rem, reason=f"Apparitor: {reason or 'sync'}")
-        await self.store.log(str(member.id), "roles-dry" if dry else "roles", info["name"],
-                       f"+{[r.name for r in add]} -{[r.name for r in rem]}")
+        await self.store.log(
+            str(member.id),
+            "roles-dry" if dry else "roles",
+            info["name"],
+            f"+{[r.name for r in add]} -{[r.name for r in rem]}",
+        )
         return [r.name for r in add], [r.name for r in rem], missing
 
     async def after_link(self, discord_id: int, guild_id: int, wiki_name: str) -> str:
@@ -193,10 +212,16 @@ class Apparitor(discord.Client):
 
 
 def fmt(info: dict) -> str:
-    st = "заблокирован" if info["blocked"] else ("частичная блокировка" if info["blocked_partial"] else "не заблокирован")
-    return (f"**{info['name']}** — {', '.join(info['labels']) or 'без флагов'}; "
-            f"правок {info['editcount']}, с {(info['registration'] or '?')[:10]}, {st}; "
-            f"АПАТ: {'да' if info['apat'] else 'нет'}")
+    st = (
+        "заблокирован"
+        if info["blocked"]
+        else ("частичная блокировка" if info["blocked_partial"] else "не заблокирован")
+    )
+    return (
+        f"**{info['name']}** — {', '.join(info['labels']) or 'без флагов'}; "
+        f"правок {info['editcount']}, с {(info['registration'] or '?')[:10]}, {st}; "
+        f"АПАТ: {'да' if info['apat'] else 'нет'}"
+    )
 
 
 def register(bot: Apparitor):
@@ -212,7 +237,8 @@ def register(bot: Apparitor):
         state = new_state()
         await bot.store.set_pending(inter.user.id, inter.guild_id, "", state)
         await inter.response.send_message(
-            f"Войдите своей учёткой Викимедиа по ссылке (30 минут): <{base}/oauth/start?s={state}>", ephemeral=True)
+            f"Войдите своей учёткой Викимедиа по ссылке (30 минут): <{base}/oauth/start?s={state}>", ephemeral=True
+        )
         await bot.report(inter.guild_id, f"/auth от {inter.user.mention}")
 
     @tree.command(name="verify", description="Привязать вики-аккаунт рувики без OAuth: код в описании правки")
@@ -221,7 +247,15 @@ def register(bot: Apparitor):
     async def verify(inter: discord.Interaction, wiki_name: str):
         await inter.response.defer(ephemeral=True)
         info = await wiki.user_info(bot.http_session, wiki_name)
-        await bot.report(inter.guild_id, f"/verify от {inter.user.mention}: " + (f"«{wiki_name}» — {'есть' if info else 'нет такого'}" if bot.gcfg(inter.guild_id).get("report_names") else "запрошен код"))
+        await bot.report(
+            inter.guild_id,
+            f"/verify от {inter.user.mention}: "
+            + (
+                f"«{wiki_name}» — {'есть' if info else 'нет такого'}"
+                if bot.gcfg(inter.guild_id).get("report_names")
+                else "запрошен код"
+            ),
+        )
         if not info:
             await inter.followup.send(f"В рувики нет участника «{wiki_name}».", ephemeral=True)
             return
@@ -229,7 +263,9 @@ def register(bot: Apparitor):
         await bot.store.set_pending(inter.user.id, inter.guild_id, info["name"], code)
         await inter.followup.send(
             f"Сделайте любую правку в рувики от имени **{info['name']}** (например, в своей песочнице) "
-            f"с описанием правки `{code}`, затем выполните `/confirm`. Код действует 30 минут.", ephemeral=True)
+            f"с описанием правки `{code}`, затем выполните `/confirm`. Код действует 30 минут.",
+            ephemeral=True,
+        )
 
     @tree.command(name="confirm", description="Проверить правку с кодом и получить роли")
     @app_commands.guild_only()
@@ -238,15 +274,23 @@ def register(bot: Apparitor):
         if not p or not p["wiki_name"]:
             await inter.response.send_message("Сначала `/verify <имя>`.", ephemeral=True)
             return
-        if dt.datetime.now(dt.timezone.utc) - p["issued_at"] > CODE_TTL:
+        if dt.datetime.now(dt.UTC) - p["issued_at"] > CODE_TTL:
             await inter.response.send_message("Код устарел, повторите `/verify`.", ephemeral=True)
             return
         await inter.response.defer(ephemeral=True)
         revid = await wiki.find_code_in_contribs(bot.http_session, p["wiki_name"], p["code"], p["issued_at"])
-        await bot.report(inter.guild_id, f"/confirm от {inter.user.mention}: " + (f"{p['wiki_name']}, " if bot.gcfg(inter.guild_id).get("report_names") else "") + f"правка с кодом: {revid or 'не найдена'}")
+        await bot.report(
+            inter.guild_id,
+            f"/confirm от {inter.user.mention}: "
+            + (f"{p['wiki_name']}, " if bot.gcfg(inter.guild_id).get("report_names") else "")
+            + f"правка с кодом: {revid or 'не найдена'}",
+        )
         if not revid:
-            await inter.followup.send(f"Правки с описанием `{p['code']}` от {p['wiki_name']} не вижу. "
-                                      f"Подождите минуту после сохранения и повторите.", ephemeral=True)
+            await inter.followup.send(
+                f"Правки с описанием `{p['code']}` от {p['wiki_name']} не вижу. "
+                f"Подождите минуту после сохранения и повторите.",
+                ephemeral=True,
+            )
             return
         await bot.store.link(inter.user.id, p["wiki_name"], "edit-summary", revid)
         info = await wiki.user_info(bot.http_session, p["wiki_name"])
@@ -263,7 +307,11 @@ def register(bot: Apparitor):
             return
         await inter.response.defer(ephemeral=True)
         info = await wiki.user_info(bot.http_session, name)
-        await bot.report(inter.guild_id, f"/status от {inter.user.mention}" + (f": «{name}»" if bot.gcfg(inter.guild_id).get("report_names") else ""))
+        await bot.report(
+            inter.guild_id,
+            f"/status от {inter.user.mention}"
+            + (f": «{name}»" if bot.gcfg(inter.guild_id).get("report_names") else ""),
+        )
         await inter.followup.send(fmt(info) if info else f"Нет участника «{name}».", ephemeral=True)
 
     @tree.command(name="sync", description="Пересчитать роли всем привязанным (только Manage Roles)")
@@ -284,14 +332,16 @@ def register(bot: Apparitor):
                 lines.append(f"{name}: {text}")
         await inter.followup.send("\n".join(lines)[:1900] or "Изменений нет.", ephemeral=True)
 
-    @tree.command(name="audit", description="Сопоставить всех участников сервера с рувики по нику (только Manage Roles)")
+    @tree.command(
+        name="audit", description="Сопоставить всех участников сервера с рувики по нику (только Manage Roles)"
+    )
     @app_commands.guild_only()
     @app_commands.checks.has_permissions(manage_roles=True)
     async def audit(inter: discord.Interaction):
         await inter.response.defer(ephemeral=True)
         guild = inter.guild
         members = [m for m in guild.members if not m.bot]
-        if len(members) < max(1, (guild.member_count or 1) // 2):   # кэш пуст или неполон — тянем список
+        if len(members) < max(1, (guild.member_count or 1) // 2):  # кэш пуст или неполон — тянем список
             members = [m async for m in guild.fetch_members(limit=None) if not m.bot]
         linked = dict(await bot.store.all_links())
         # кандидат = привязанное имя, иначе ник на сервере, иначе отображаемое имя, иначе логин
@@ -300,20 +350,29 @@ def register(bot: Apparitor):
         managed = bot.managed_roles(guild.id)
         rows, mism, n_linked, n_match, n_none, new_cands = [], [], 0, 0, 0, []
         for m in members:
-            name = cand[m.id]; info = infos.get(name)
+            name = cand[m.id]
+            info = infos.get(name)
             src = "oauth" if m.id in linked else ("nick" if info else "—")
-            if m.id in linked: n_linked += 1
-            elif info: n_match += 1; new_cands.append((m.id, info["name"], "nick"))
-            else: n_none += 1
+            if m.id in linked:
+                n_linked += 1
+            elif info:
+                n_match += 1
+                new_cands.append((m.id, info["name"], "nick"))
+            else:
+                n_none += 1
             have = sorted({r.name for r in m.roles} & managed)
             want = sorted(bot.wanted_roles(guild.id, info)) if info and bot.admissible(info)[0] else []
             flag = "" if not info else ("=" if have == want else "≠")
-            if flag == "≠": mism.append(f"{m.display_name} ↔ {info['name']}: есть {have or '—'}, надо {want or '—'}")
-            rows.append(f"{m.display_name}\t{name}\t{src}\t{', '.join(info['labels']) if info else '—'}\t{'; '.join(have) or '—'}\t{flag}")
+            if flag == "≠":
+                mism.append(f"{m.display_name} ↔ {info['name']}: есть {have or '—'}, надо {want or '—'}")
+            labels = ", ".join(info["labels"]) if info else "—"
+            rows.append(f"{m.display_name}\t{name}\t{src}\t{labels}\t{'; '.join(have) or '—'}\t{flag}")
         if new_cands:
             await bot.store.set_candidates(guild.id, new_cands)
-        head = (f"Аудит {guild.name}: участников {len(members)}; привязано через OAuth {n_linked}, "
-                f"совпадение по нику {n_match}, не сопоставлено {n_none}; расхождений ролей {len(mism)}.")
+        head = (
+            f"Аудит {guild.name}: участников {len(members)}; привязано через OAuth {n_linked}, "
+            f"совпадение по нику {n_match}, не сопоставлено {n_none}; расхождений ролей {len(mism)}."
+        )
         body = "участник\tкандидат в вики\tисточник\tфлаги\tуправляемые роли\tсовпадение\n" + "\n".join(rows)
         f = discord.File(io.BytesIO(body.encode()), filename=f"audit-{guild.id}.tsv")
         ch = bot.get_channel(bot.gcfg(guild.id).get("report_channel_id") or 0)
@@ -330,12 +389,11 @@ def register(bot: Apparitor):
 def load_env() -> None:
     """Локальный .env (DISCORD_TOKEN, OAUTH_*, TOOL_TOOLSDB_*) в окружение; на Toolforge всё уже в envvars."""
     if os.path.exists(".env"):
-        for line in open(".env"):
-            if "=" in line and not line.startswith("#"):
-                k, v = line.strip().split("=", 1)
-                os.environ.setdefault(k, v)
-
-
+        with open(".env") as f:
+            for line in f:
+                if "=" in line and not line.startswith("#"):
+                    k, v = line.strip().split("=", 1)
+                    os.environ.setdefault(k, v)
 
 
 def read_token() -> str:

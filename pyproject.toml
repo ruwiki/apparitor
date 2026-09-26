@@ -1,0 +1,19 @@
+[project]
+name = "apparitor"
+version = "0.1.0"
+description = "Discord-бот доступов для серверов русской Википедии и АК"
+requires-python = ">=3.12"
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+extend-exclude = ["vendor", "tools"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF"]
+ignore = ["RUF001", "RUF002", "RUF003"]   # кириллица в строках и комментариях — норма
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+pythonpath = ["."]

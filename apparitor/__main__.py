@@ -1,5 +1,6 @@
 """Один процесс: Discord-клиент + HTTP (OAuth-колбэк, healthz). Процесс `web` из Procfile;
 порт из $PORT (его даёт Toolforge webservice), локально 8080."""
+
 import asyncio
 import logging
 import os
@@ -28,7 +29,8 @@ async def main():
         except discord.PrivilegedIntentsRequired:
             logging.getLogger("apparitor").error(
                 "Server Members Intent не включён в Developer Portal → Bot; запускаюсь без него "
-                "(нет событий входа и обхода участников)")
+                "(нет событий входа и обхода участников)"
+            )
         finally:
             await runner.cleanup()
 
