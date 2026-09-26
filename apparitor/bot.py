@@ -47,15 +47,12 @@ class Apparitor(discord.Client):
         return discord.utils.get(guild.roles, name=name)
 
     def wanted_roles(self, info: dict) -> list[str]:
+        """Имена ролей по условиям; пустая строка в конфиге = условие не используется."""
         r = self.cfg["roles"]
-        out = [r["admitted"]]
-        if info["sysop"]:
-            out.append(r["sysop"])
-        if info["apat"]:
-            out.append(r["apat"])
-        if "arbcom" in info["groups"]:
-            out.append(r["arbcom"])
-        return out
+        cond = {"admitted": True, "sysop": info["sysop"], "apat": info["apat"],
+                "arbcom": "arbcom" in info["groups"], "checkuser": "checkuser" in info["groups"],
+                "bureaucrat": "bureaucrat" in info["groups"]}
+        return [r[k] for k, ok in cond.items() if ok and r.get(k)]
 
     def admissible(self, info: dict) -> tuple[bool, str]:
         a = self.cfg["admit"]
@@ -72,7 +69,7 @@ class Apparitor(discord.Client):
 
     async def apply_roles(self, member: discord.Member, info: dict) -> tuple[list[str], list[str]]:
         """Выдаёт нужные, снимает ненужные из управляемого набора. Возвращает (added, removed, missing)."""
-        managed = set(self.cfg["roles"].values())
+        managed = {v for v in self.cfg["roles"].values() if v}
         want = set(self.wanted_roles(info))
         have = {r.name for r in member.roles}
         add = [self.role_by_name(member.guild, n) for n in want - have]
