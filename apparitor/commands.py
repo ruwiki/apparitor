@@ -203,11 +203,12 @@ def register(bot: Apparitor):
         )
         f = discord.File(io.BytesIO(body.encode()), filename=f"audit-{guild.id}.txt")
         sent = await bot.report(guild.id, head, file=f)
-        tail = (
-            "\nПолный отчёт файлом — в служебном канале."
-            if sent
-            else "\nВ служебный канал написать не удалось (нет права?), файл не отправлен."
-        )
-        await inter.followup.send(head + tail, ephemeral=True)
+        if sent:
+            await inter.followup.send(head + "\nПолный отчёт файлом — в служебном канале.", ephemeral=True)
+        else:  # канала нет или нет права — файл тому, кто спросил
+            f = discord.File(io.BytesIO(body.encode()), filename=f"audit-{guild.id}.txt")
+            await inter.followup.send(
+                head + "\nВ служебный канал написать не удалось, файл здесь.", ephemeral=True, file=f
+            )
         await bot.store.log(str(inter.user.id), "audit", str(guild.id), head)
         log.info("audit %s: %s", guild.id, head)
