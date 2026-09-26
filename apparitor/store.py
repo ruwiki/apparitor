@@ -21,6 +21,8 @@ SCHEMA = {
                  verified_at varchar(20) not null, method varchar(32) not null, evidence varchar(255))""",
     "pending": """(discord_id bigint primary key, guild_id bigint not null, wiki_name varchar(255) not null,
                    code varchar(64) not null, issued_at varchar(20) not null)""",
+    "candidates": """(guild_id bigint not null, discord_id bigint not null, wiki_name varchar(255) not null,
+                      source varchar(32) not null, seen_at varchar(20) not null, primary key (guild_id, discord_id))""",
     "log": """(id integer primary key {autoinc}, ts varchar(20), actor varchar(32), action varchar(32),
                target varchar(255), detail text)""",
 }

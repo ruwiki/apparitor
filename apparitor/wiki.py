@@ -55,7 +55,7 @@ def _pack(u: dict, global_groups: list[str]) -> dict:
     }
 
 
-async def users_info(session: aiohttp.ClientSession, names: list[str]) -> dict[str, dict | None]:
+async def users_info(session: aiohttp.ClientSession, names: list[str], with_global: bool = True) -> dict[str, dict | None]:
     """Пакетно (до 50 имён): имя -> info | None. Глобальные группы — отдельным запросом на имя,
     только для тех, у кого они могут быть (стюарды и т.п. редки, но запрос дешёвый)."""
     out: dict[str, dict | None] = {}
@@ -68,8 +68,11 @@ async def users_info(session: aiohttp.ClientSession, names: list[str]) -> dict[s
             if "missing" in u or "invalid" in u:
                 out[u.get("name", "")] = None
                 continue
-            g = await _get(session, action="query", meta="globaluserinfo", guiuser=u["name"], guiprop="groups")
-            out[u["name"]] = _pack(u, g["query"].get("globaluserinfo", {}).get("groups", []))
+            gg = []
+            if with_global:
+                g = await _get(session, action="query", meta="globaluserinfo", guiuser=u["name"], guiprop="groups")
+                gg = g["query"].get("globaluserinfo", {}).get("groups", [])
+            out[u["name"]] = _pack(u, gg)
     return out
 
 

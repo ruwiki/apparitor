@@ -1,5 +1,6 @@
 """Discord-часть: slash-команды. Без Message Content Intent — текст сообщений боту не нужен."""
 from __future__ import annotations
+import io
 import logging
 import os
 import secrets
@@ -291,6 +292,49 @@ def load_env() -> None:
             if "=" in line and not line.startswith("#"):
                 k, v = line.strip().split("=", 1)
                 os.environ.setdefault(k, v)
+
+
+    @tree.command(name="audit", description="Сопоставить всех участников сервера с рувики по нику (только Manage Roles)")
+    @app_commands.guild_only()
+    @app_commands.checks.has_permissions(manage_roles=True)
+    async def audit(inter: discord.Interaction):
+        await inter.response.defer(ephemeral=True)
+        guild = inter.guild
+        members = [m for m in guild.members if not m.bot]
+        if len(members) < max(1, (guild.member_count or 1) // 2):   # кэш пуст или неполон — тянем список
+            members = [m async for m in guild.fetch_members(limit=None) if not m.bot]
+        linked = dict(await bot.store.all_links())
+        # кандидат = привязанное имя, иначе ник на сервере, иначе отображаемое имя, иначе логин
+        cand = {m.id: (linked.get(m.id) or m.nick or m.global_name or m.name) for m in members}
+        infos = await wiki.users_info(bot.http_session, list(set(cand.values())), with_global=False)
+        managed = bot.managed_roles(guild.id)
+        rows, mism, n_linked, n_match, n_none, new_cands = [], [], 0, 0, 0, []
+        for m in members:
+            name = cand[m.id]; info = infos.get(name)
+            src = "oauth" if m.id in linked else ("nick" if info else "—")
+            if m.id in linked: n_linked += 1
+            elif info: n_match += 1; new_cands.append((m.id, info["name"], "nick"))
+            else: n_none += 1
+            have = sorted({r.name for r in m.roles} & managed)
+            want = sorted(bot.wanted_roles(guild.id, info)) if info and bot.admissible(info)[0] else []
+            flag = "" if not info else ("=" if have == want else "≠")
+            if flag == "≠": mism.append(f"{m.display_name} ↔ {info['name']}: есть {have or '—'}, надо {want or '—'}")
+            rows.append(f"{m.display_name}\t{name}\t{src}\t{', '.join(info['labels']) if info else '—'}\t{'; '.join(have) or '—'}\t{flag}")
+        if new_cands:
+            await bot.store.set_candidates(guild.id, new_cands)
+        head = (f"Аудит {guild.name}: участников {len(members)}; привязано через OAuth {n_linked}, "
+                f"совпадение по нику {n_match}, не сопоставлено {n_none}; расхождений ролей {len(mism)}.")
+        body = "участник\tкандидат в вики\tисточник\tфлаги\tуправляемые роли\tсовпадение\n" + "\n".join(rows)
+        f = discord.File(io.BytesIO(body.encode()), filename=f"audit-{guild.id}.tsv")
+        ch = bot.get_channel(bot.gcfg(guild.id).get("report_channel_id") or 0)
+        text = head + ("\nРасхождения:\n" + "\n".join(mism[:25]) if mism else "")
+        if ch:
+            try:
+                await ch.send(text[:1900], file=f)
+            except discord.Forbidden:
+                log.warning("audit: нет права писать в #%s", ch.name)
+        await inter.followup.send(head + "\nПолная таблица — в служебном канале." if ch else head, ephemeral=True)
+        await bot.store.log(str(inter.user.id), "audit", str(guild.id), head)
 
 
 def read_token() -> str:
