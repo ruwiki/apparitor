@@ -20,8 +20,21 @@ Discord-бот доступов для серверов сообщества р�
 `dry_run = true` — бот ничего не меняет, а пишет в служебный канал, что сделал бы.
 Роли и критерии впуска — в `config.example.toml`.
 
-## Запуск
-Локально: `cp config.example.toml config.toml`, `.env` с `DISCORD_TOKEN`, `OAUTH_CLIENT_ID`,
-`OAUTH_CLIENT_SECRET`; зависимости `pip install --target vendor -r requirements.txt`; `./run.sh`.
-Toolforge: build service из этого репо (`Procfile`), секреты через `toolforge envvars`,
-конфиг `config.toolforge.toml` (путь задаётся envvar `APPARITOR_CONFIG`).
+## Развёртывание (Toolforge, тул `apparitor`)
+Один процесс `web` из `Procfile`: Discord-клиент и HTTP на `$PORT`. Хранилище — ToolsDB
+(база `<user>__apparitor`, создаётся один раз: `sql tools` → `create database ...`).
+Секреты и конфиг — через envvars, в репо их нет:
+
+    toolforge envvars create DISCORD_TOKEN …
+    toolforge envvars create OAUTH_CLIENT_ID …
+    toolforge envvars create OAUTH_CLIENT_SECRET …
+    toolforge envvars create APPARITOR_CONFIG config.toolforge.toml
+    toolforge build start https://github.com/ruwiki/apparitor
+    toolforge webservice buildservice start
+    curl https://apparitor.toolforge.org/healthz     # ok
+
+Обновление: `toolforge build start …` и `toolforge webservice restart`. Логи: `toolforge webservice logs`.
+
+## Локальная отладка
+`cp config.example.toml config.toml`, `.env` с теми же переменными, зависимости
+`pip install --target vendor -r requirements.txt`, `./run.sh`. Без TOOL_TOOLSDB_USER хранилище — sqlite.

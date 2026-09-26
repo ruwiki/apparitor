@@ -1,4 +1,5 @@
-"""Один процесс: Discord-клиент + HTTP (OAuth-колбэк). Порт из $PORT (Toolforge) или 8080."""
+"""Один процесс: Discord-клиент + HTTP (OAuth-колбэк, healthz). Процесс `web` из Procfile;
+порт из $PORT (его даёт Toolforge webservice), локально 8080."""
 import asyncio
 import logging
 import os

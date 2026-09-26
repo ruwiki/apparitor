@@ -13,7 +13,8 @@ META = "https://meta.wikimedia.org/w/rest.php/oauth2"
 def make_app(bot) -> web.Application:
     app = web.Application()
     app["bot"] = bot
-    app.add_routes([web.get("/", index), web.get("/oauth/start", start), web.get("/oauth/callback", callback)])
+    app.add_routes([web.get("/", index), web.get("/healthz", healthz),
+                    web.get("/oauth/start", start), web.get("/oauth/callback", callback)])
     return app
 
 
@@ -21,6 +22,17 @@ async def index(req: web.Request) -> web.Response:
     bot = req.app["bot"]
     mode = "холостой" if bot.cfg.get("dry_run", True) else "боевой"
     return web.Response(text=f"Apparitor: бот доступов АК рувики. Режим: {mode}. Код: {bot.cfg.get('repo_url', '')}\n")
+
+
+async def healthz(req: web.Request) -> web.Response:
+    """Для проверки после деплоя: Discord-сессия жива и БД отвечает."""
+    bot = req.app["bot"]
+    ok = bot.is_ready() and not bot.is_closed()
+    try:
+        bot.store.all_links()
+    except Exception as e:  # noqa: BLE001
+        return web.Response(status=503, text=f"db: {e}")
+    return web.Response(status=200 if ok else 503, text="ok" if ok else "discord not ready")
 
 
 async def start(req: web.Request) -> web.Response:

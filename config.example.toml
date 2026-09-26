@@ -1,5 +1,5 @@
 # Скопировать в config.toml. Токен бота — в .env (DISCORD_TOKEN=...), не сюда.
-db = "apparitor.db"
+db = "apparitor.db"   # sqlite только для локальной отладки; на Toolforge — ToolsDB через envvars
 base_url = ""                 # https://apparitor.toolforge.org — для ссылок /auth
 repo_url = ""
 report_channel_id = 0         # служебный канал для отчётов о действиях
