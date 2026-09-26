@@ -21,5 +21,7 @@ remove_on_confirm = []        # роли, снимаемые после подт
 admitted = "участник"         # всем прошедшим проверку
 apat = "АПАТ"                 # autoreview ∨ editor ∨ sysop
 sysop = "админ"               # дальше ключи = группы рувики (+ глобальные: steward)
-arbcom = "арбитр"
+arbcom = "арбитр"             # группа рувики + действующий состав из JSON гаджета markadmins
 checkuser = ""
+closer-plus = ""              # статусы без техгруппы, из того же JSON: closer-plus (ПИ+), vandalfighter,
+vandalfighter = ""            # clerk, techdeleter (ТУ), vrts

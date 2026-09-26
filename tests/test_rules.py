@@ -20,6 +20,16 @@ def test_wanted_roles_per_guild(cfg):
     assert rules.wanted_roles(guild_cfg(cfg, RUWIKI), i) == ["аутентифицирован(а)", "Администратор", "ЧЮ", "Ревизор"]
     assert rules.wanted_roles(guild_cfg(cfg, CLERKS), i) == ["ЧЮ"]
     assert rules.wanted_roles(guild_cfg(cfg, 999), i) == []
+    i = info(groups=["closer", "closer-plus", "vandalfighter", "clerk", "techdeleter", "vrts"])
+    assert rules.wanted_roles(guild_cfg(cfg, RUWIKI), i) == [
+        "аутентифицирован(а)",
+        "ПИ",
+        "ПИ+",
+        "Вандалоборец",
+        "Клерк",
+        "ТУ",
+    ], "статусы из JSON гаджета; vrts = '' не выдаётся"
+    assert rules.wanted_roles(guild_cfg(cfg, CLERKS), i) == ["Клерк"]
 
 
 def test_managed_and_diff(cfg):

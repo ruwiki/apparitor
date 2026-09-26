@@ -4,8 +4,13 @@ from __future__ import annotations
 
 import asyncio
 import datetime as dt
+import json
+import logging
+import time
 
 import aiohttp
+
+log = logging.getLogger("apparitor")
 
 API = "https://ru.wikipedia.org/w/api.php"
 UA = "Apparitor/0.1 (https://ru.wikipedia.org/wiki/User:Carn; access bot for ruwiki ArbCom Discord)"
@@ -27,7 +32,26 @@ LABELS = {
     "steward": "стюард",
     "global-sysop": "глобальный админ",
     "global-interface-editor": "глобальный редактор интерфейса",
+    "closer-plus": "полномочный ПИ",
+    "vandalfighter": "борец с вандализмом",
+    "clerk": "клерк",
+    "techdeleter": "технический удаляющий",
+    "vrts": "VRTS",
 }
+# Статусы без технической группы (ПИ+, борцы с вандализмом, клерки, ТУ, VRTS) — из JSON гаджета markadmins,
+# его обновляет MBHbot раз в несколько дней: ключ гаджета -> псевдогруппа. arbcom берём и оттуда:
+# в группе рувики нет арбитров с флагом админа, в JSON — весь действующий состав.
+STATUS_PAGE = "MediaWiki:Gadget-markadmins.json"
+STATUS_GROUPS = {
+    "I+": "closer-plus",
+    "V": "vandalfighter",
+    "K": "clerk",
+    "D": "techdeleter",
+    "T": "vrts",
+    "Ar": "arbcom",
+}
+STATUS_TTL = 6 * 3600
+_status_cache: tuple[float, dict[str, set[str]]] = (0.0, {})
 HIDDEN = {
     "*",
     "user",
@@ -60,8 +84,36 @@ async def _get(session: aiohttp.ClientSession, **params) -> dict:
     raise RuntimeError("ruwiki API: 429 после 4 попыток")
 
 
-def _pack(u: dict, global_groups: list[str]) -> dict:
-    groups = [g for g in u.get("groups", []) if g not in HIDDEN] + [g for g in global_groups if g in GLOBAL_KEEP]
+def parse_statuses(content: str) -> dict[str, set[str]]:
+    """JSON гаджета -> имя -> псевдогруппы (только ключи из STATUS_GROUPS)."""
+    user_set = json.loads(content).get("userSet", {})
+    out: dict[str, set[str]] = {}
+    for key, group in STATUS_GROUPS.items():
+        for name in user_set.get(key, []):
+            out.setdefault(name, set()).add(group)
+    return out
+
+
+async def statuses(session: aiohttp.ClientSession) -> dict[str, set[str]]:
+    """Статусы по JSON гаджета, кэш на STATUS_TTL. При сбое — прежний кэш (или пусто) и предупреждение в лог."""
+    global _status_cache
+    ts, cached = _status_cache
+    if cached and time.monotonic() - ts < STATUS_TTL:
+        return cached
+    try:
+        d = await _get(session, action="query", prop="revisions", rvprop="content", rvslots="main", titles=STATUS_PAGE)
+        out = parse_statuses(d["query"]["pages"][0]["revisions"][0]["slots"]["main"]["content"])
+    except Exception as e:  # любой сбой чтения: флаги из групп важнее, статусы подождут
+        log.warning("%s не прочитан (%s); статусы %s", STATUS_PAGE, e, "из кэша" if cached else "не учитываются")
+        return cached
+    _status_cache = (time.monotonic(), out)
+    return out
+
+
+def _pack(u: dict, global_groups: list[str], status_groups: set[str] = frozenset()) -> dict:
+    groups = [g for g in u.get("groups", []) if g not in HIDDEN]
+    groups += [g for g in STATUS_GROUPS.values() if g in status_groups and g not in groups]
+    groups += [g for g in global_groups if g in GLOBAL_KEEP]
     partial = bool(u.get("blockpartial"))
     return {
         "name": u["name"],
@@ -84,6 +136,7 @@ async def users_info(
     только для тех, у кого они могут быть (стюарды и т.п. редки, но запрос дешёвый)."""
     out: dict[str, dict | None] = {}
     names = [n for n in names if valid_name(n)]
+    st = await statuses(session) if names else {}
     for i in range(0, len(names), 50):
         chunk = names[i : i + 50]
         d = await _get(
@@ -101,7 +154,7 @@ async def users_info(
             if with_global:
                 g = await _get(session, action="query", meta="globaluserinfo", guiuser=u["name"], guiprop="groups")
                 gg = g["query"].get("globaluserinfo", {}).get("groups", [])
-            out[u["name"]] = _pack(u, gg)
+            out[u["name"]] = _pack(u, gg, st.get(u["name"], set()))
     return out
 
 

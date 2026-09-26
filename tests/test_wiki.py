@@ -13,6 +13,19 @@ def test_pack_local_and_global_groups():
     assert "стюард" in i["labels"] and i["apat"] and not i["sysop"] and not i["blocked"]
 
 
+def test_statuses_from_gadget_json():
+    content = '{"userSet": {"A": ["Adm"], "I+": ["Swarrel"], "V": ["Swarrel", "MBH"], "Ar": ["Adm"]}, "x": 1}'
+    st = wiki.parse_statuses(content)
+    assert st == {"Swarrel": {"closer-plus", "vandalfighter"}, "MBH": {"vandalfighter"}, "Adm": {"arbcom"}}
+    u = {"name": "Swarrel", "groups": ["user", "closer", "editor"]}
+    i = wiki._pack(u, ["steward"], st["Swarrel"])
+    assert i["groups"] == ["closer", "editor", "closer-plus", "vandalfighter", "steward"]
+    assert "полномочный ПИ" in i["labels"]
+    # арбитр-админ: в группе рувики уже есть arbcom — не дублируем
+    i = wiki._pack({"name": "Adm", "groups": ["sysop", "arbcom"]}, [], st["Adm"])
+    assert i["groups"] == ["sysop", "arbcom"]
+
+
 def test_partial_block_is_not_block():
     u = {"name": "P", "groups": [], "blockid": 1, "blockpartial": True}
     i = wiki._pack(u, [])
