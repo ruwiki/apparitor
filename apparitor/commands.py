@@ -30,6 +30,10 @@ def fmt(info: dict) -> str:
     )
 
 
+def _uniq(xs: list[str | None]) -> list[str]:
+    return [x for i, x in enumerate(xs) if x and x not in xs[:i]]
+
+
 def register(bot: Apparitor):
     tree = bot.tree
 
@@ -146,14 +150,21 @@ def register(bot: Apparitor):
         managed = rules.managed_roles(gcfg)
         roles_map = gcfg.get("roles", {})
         global_role_names = {roles_map[k] for k in roles_map if k in wiki.GLOBAL_KEEP and roles_map[k]}
-        # кандидат = подтверждённое имя, иначе ник на сервере, иначе отображаемое имя, иначе логин
-        cand = {m.id: (linked.get(m.id) or m.nick or m.global_name or m.name) for m in members}
+        # кандидаты = подтверждённое имя, иначе ник на сервере, отображаемое имя и логин — все три:
+        # короткий ник («Pessimist», «Всеслав») часто существует в рувики как чужая пустая учётка,
+        # поэтому из найденных берём с наибольшим числом правок
+        cands = {m.id: [linked[m.id]] if m.id in linked else _uniq([m.nick, m.global_name, m.name]) for m in members}
         # глобальные группы (стюард и т.п.) запрашиваем только там, где они могут повлиять на роли
-        need_global = {cand[m.id] for m in members if {r.name for r in m.roles} & global_role_names}
+        need_global = {n for m in members if {r.name for r in m.roles} & global_role_names for n in cands[m.id]}
+        all_names = {n for v in cands.values() for n in v}
         infos = await wiki.users_info(
-            bot.http_session, [n for n in set(cand.values()) if n not in need_global], with_global=False
+            bot.http_session, [n for n in all_names if n not in need_global], with_global=False
         )
         infos |= await wiki.users_info(bot.http_session, list(need_global), with_global=True)
+        cand = {
+            mid: max((n for n in names if infos.get(n)), key=lambda n: infos[n]["editcount"], default=names[0])
+            for mid, names in cands.items()
+        }
         verified, by_nick, unmatched, new_cands, n_linked, n_nick = [], [], [], [], 0, 0
         for m in members:
             info = infos.get(cand[m.id])
