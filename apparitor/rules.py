@@ -5,8 +5,7 @@ from __future__ import annotations
 import datetime as dt
 
 from .config import Admit, GuildCfg
-from .models import Decision, UserInfo
-from .store import parse_ts
+from .models import Decision, UserInfo, parse_ts
 
 # Старший статус заменяет младший: ПИ+ вместо ПИ (решение владельца 26.09). Действует, только если старшему
 # на сервере сопоставлена роль; иначе младшая роль остаётся.
@@ -53,4 +52,4 @@ def decide(admit: Admit, g: GuildCfg, info: UserInfo, have: set[str]) -> Decisio
     ok, why = admissible(admit, info)
     want = set(wanted_roles(g, info)) if ok else set()
     add, rem = role_diff(have, want, managed_roles(g))
-    return Decision(ok=ok, why=why, want=sorted(want), add=add, remove=rem)
+    return Decision(ok=ok, why=why, add=add, remove=rem)

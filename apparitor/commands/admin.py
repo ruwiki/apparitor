@@ -19,18 +19,19 @@ def register(bot: Apparitor) -> None:
     @app_commands.checks.has_permissions(manage_roles=True)
     async def sync(inter: discord.Interaction):
         await inter.response.defer(ephemeral=True)
-        links = await bot.store.all_links()
-        infos = await bot.wiki.users_info([n for _, n in links])
+        # связки общие для всех серверов; пересчитываем только тех, кто на ЭТОМ сервере
+        here = [
+            (did, name, m) for did, name in await bot.store.all_links() if (m := await bot.member(inter.guild_id, did))
+        ]
+        infos = await bot.wiki.users_info([n for _, n, _ in here])
         lines = []
-        for did, name in links:
-            m = await bot.member(inter.guild_id, did)
-            if not m:
-                lines.append(f"{name}: ушёл с сервера")
-                continue
+        for _, name, m in here:
             text = await bot.evaluate(m, infos.get(name), name)
             if "выдать —, снять —" not in text:
                 lines.append(f"{name}: {text}")
-        await inter.followup.send("\n".join(lines)[:1900] or "Изменений нет.", ephemeral=True)
+        await inter.followup.send(
+            "\n".join(lines)[:1900] or f"Изменений нет (привязанных на сервере: {len(here)}).", ephemeral=True
+        )
 
     @tree.command(name="audit", description="Сопоставить всех участников сервера с рувики (только Manage Roles)")
     @app_commands.guild_only()
@@ -58,13 +59,12 @@ def register(bot: Apparitor) -> None:
         rows, new_cands = [], []
         for m in members:
             have = {r.name for r in m.roles}
-            name = match.pick(cands[m.id], infos)
-            info = infos.get(name) if name else None
+            info = match.pick(cands[m.id], infos)
             row = audit.Row(
                 who=m.display_name + (f" (логин {m.name})" if m.name != m.display_name else ""),
                 mine=", ".join(sorted(have & managed)) or "—",
                 info=info,
-                linked=m.id in linked,
+                linked=linked.get(m.id),
             )
             if info:
                 row.decision = rules.decide(bot.cfg.admit, gcfg, info, have)

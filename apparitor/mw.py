@@ -10,24 +10,45 @@ import aiohttp
 UA = "Apparitor/0.1 (https://ru.wikipedia.org/wiki/User:Carn; access bot for ruwiki ArbCom Discord)"
 
 
+ATTEMPTS = 4
+
+
 class Client:
-    def __init__(self, session: aiohttp.ClientSession, api_url: str, user_agent: str = UA):
-        self.session = session
+    def __init__(self, api_url: str, user_agent: str = UA, session: aiohttp.ClientSession | None = None):
+        """Сессия создаётся лениво при первом запросе (внутри цикла событий) либо передаётся готовая."""
         self.api_url = api_url
         self.headers = {"User-Agent": user_agent}
+        self._session = session
+
+    @property
+    def session(self) -> aiohttp.ClientSession:
+        if self._session is None or self._session.closed:
+            self._session = aiohttp.ClientSession()
+        return self._session
+
+    async def close(self) -> None:
+        if self._session and not self._session.closed:
+            await self._session.close()
 
     async def get(self, **params) -> dict:
-        """GET с форматом json/formatversion=2; 429 — экспоненциальная пауза, четыре попытки."""
+        """GET с форматом json/formatversion=2. 429 — пауза по Retry-After (иначе 1, 2, 4 с), четыре попытки."""
         params.setdefault("format", "json")
         params.setdefault("formatversion", "2")
-        for attempt in range(4):
+        for attempt in range(ATTEMPTS):
             async with self.session.get(self.api_url, params=params, headers=self.headers) as r:
-                if r.status == 429:
-                    await asyncio.sleep(2**attempt)
-                    continue
-                r.raise_for_status()
-                return await r.json()
-        raise RuntimeError(f"{self.api_url}: 429 после 4 попыток")
+                if r.status != 429:
+                    r.raise_for_status()
+                    return await r.json()
+                if attempt < ATTEMPTS - 1:
+                    await asyncio.sleep(_retry_after(r.headers.get("Retry-After"), 2**attempt))
+        raise RuntimeError(f"{self.api_url}: 429 после {ATTEMPTS} попыток")
+
+
+def _retry_after(header: str | None, default: float) -> float:
+    try:
+        return min(float(header), 30.0) if header else default
+    except ValueError:
+        return default
 
     async def raw_page(self, title: str) -> str | None:
         """Текст последней версии страницы (для JSON-страниц гаджетов); None — страницы нет."""

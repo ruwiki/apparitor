@@ -13,20 +13,23 @@ def test_pick_prefers_edits():
         "Pessimist": info(name="Pessimist", editcount=0),
         "pessimist2006": info(name="Pessimist2006", editcount=364170),
     }
-    assert match.pick(["Pessimist", "pessimist2006"], infos) == "pessimist2006"
+    assert match.pick(["Pessimist", "pessimist2006"], infos).name == "Pessimist2006"
     assert match.pick(["nobody"], {"nobody": None}) is None
 
 
 def test_audit_report_sections():
-    same = Decision(ok=True, why="ок", want=[], add=[], remove=[])
-    diff = Decision(ok=True, why="ок", want=["ПИ+"], add=["ПИ+"], remove=["ПИ"])
+    same = Decision(ok=True, why="ок", add=[], remove=[])
+    diff = Decision(ok=True, why="ок", add=["ПИ+"], remove=["ПИ"])
     rows = [
-        audit.Row(who="Carn", mine="Арбитр", info=info(name="Carn"), linked=True, decision=same),
-        audit.Row(who="Swarrel", mine="ПИ", info=info(name="Swarrel", labels=["ПИ"]), linked=False, decision=diff),
-        audit.Row(who="Lotta", mine="—", info=None, linked=False),
+        audit.Row(who="Carn", mine="Арбитр", info=info(name="Carn"), linked="Carn", decision=same),
+        audit.Row(who="Swarrel", mine="ПИ", info=info(name="Swarrel", labels=["ПИ"]), decision=diff),
+        audit.Row(who="Lotta", mine="—", info=None),
+        audit.Row(who="Gone", mine="✔", info=None, linked="Old Name"),  # связка есть, учётки нет
     ]
     head, body = audit.build("Clerks", rows)
-    assert "участников 3; связка подтверждена (OAuth/правка) 1, совпадение только по нику 1, не сопоставлено 1" in head
-    assert "по подтверждённым 0, по нику 1" in head
+    assert "участников 4; связка подтверждена (OAuth/правка) 2, совпадение только по нику 1, не сопоставлено 1" in head
+    assert "по подтверждённым 1, по нику 1" in head
     assert "Swarrel ↔ Swarrel (ПИ): роли бота сейчас ПИ; бот выдал бы ПИ+, снял бы ПИ" in body
     assert "Lotta; роли бота: —" in body
+    assert "Gone ↔ Old Name: связка подтверждена, но такой учётки в рувики нет" in body
+    assert body.index("Gone ↔") < body.index("== Расхождения по нику"), "пропавшая связка — в первом разделе"

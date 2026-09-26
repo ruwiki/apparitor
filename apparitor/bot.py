@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import logging
 
-import aiohttp
 import discord
 from discord import app_commands
 
@@ -27,22 +26,18 @@ class Apparitor(discord.Client):
         self.store = Store(cfg.db)
         self.tree = app_commands.CommandTree(self)
         self.tree.on_error = self.on_command_error
-        self.http_session: aiohttp.ClientSession | None = None
-        self.wiki: RuWiki | None = None
+        self.wiki = RuWiki()  # HTTP-сессию заводит сам при первом запросе: OAuth-колбэк может прийти до Discord
 
     # --- жизненный цикл ----------------------------------------------------------
     async def setup_hook(self):
         from .commands import register  # здесь, чтобы не было кольца импортов
 
-        self.http_session = aiohttp.ClientSession()
-        self.wiki = RuWiki(self.http_session)
         register(self)
         for gid in self.cfg.guilds:
             await self.sync_guild(gid)
 
     async def close(self):
-        if self.http_session:
-            await self.http_session.close()
+        await self.wiki.mw.close()
         await super().close()
 
     async def sync_guild(self, gid: int) -> bool:
@@ -114,7 +109,7 @@ class Apparitor(discord.Client):
     def describe(self, guild_id: int, member: discord.Member, info: UserInfo) -> str:
         """Кто это — для отчёта. Связку ник ↔ вики-аккаунт показываем только при report_names."""
         if self.gcfg(guild_id).report_names:
-            return f"{member.mention} ↔ **{info.name}** ({', '.join(info.labels) or 'без флагов'})"
+            return f"{member.mention} ↔ **{info.name}** ({info.labels_text})"
         return f"{member.mention}: вики-аккаунт подтверждён"
 
     # --- решение по участнику ---------------------------------------------------------

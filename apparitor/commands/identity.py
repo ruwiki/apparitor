@@ -19,7 +19,7 @@ CODE_TTL = dt.timedelta(minutes=30)
 def fmt(info: UserInfo) -> str:
     st = "заблокирован" if info.blocked else ("частичная блокировка" if info.blocked_partial else "не заблокирован")
     return (
-        f"**{info.name}** — {', '.join(info.labels) or 'без флагов'}; "
+        f"**{info.name}** — {info.labels_text}; "
         f"правок {info.editcount}, с {(info.registration or '?')[:10]}, {st}; "
         f"АПАТ: {'да' if info.apat else 'нет'}"
     )
@@ -87,8 +87,10 @@ def register(bot: Apparitor) -> None:
                 ephemeral=True,
             )
             return
+        info = await bot.wiki.user_info(
+            p["wiki_name"]
+        )  # сначала данные, потом связка: упавший API не оставит связку без ролей
         await bot.store.link(inter.user.id, p["wiki_name"], "edit-summary", revid)
-        info = await bot.wiki.user_info(p["wiki_name"])
         text = await bot.evaluate(inter.user, info, p["wiki_name"])
         await inter.followup.send(f"Подтверждено (revid {revid}). {fmt(info) if info else ''}\n{text}", ephemeral=True)
 

@@ -12,8 +12,8 @@ def candidates(nick: str | None, global_name: str | None, username: str) -> list
     return [x for i, x in enumerate(xs) if x and x not in xs[:i]]
 
 
-def pick(names: list[str], infos: dict[str, UserInfo | None]) -> str | None:
+def pick(names: list[str], infos: dict[str, UserInfo | None]) -> UserInfo | None:
     """Из найденных — с наибольшим числом правок: короткий ник («Pessimist», «Всеслав») часто существует
     в рувики как чужая пустая учётка. None — не найден ни один."""
-    found = [n for n in names if infos.get(n)]
-    return max(found, key=lambda n: infos[n].editcount) if found else None
+    found = [infos[n] for n in names if infos.get(n)]
+    return max(found, key=lambda i: i.editcount) if found else None

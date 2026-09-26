@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 import tomllib
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 
 
 def load_env(path: str = ".env") -> None:
@@ -56,8 +56,16 @@ class Config:
     db: dict = field(default_factory=dict)
 
     def for_guild(self, guild_id: int) -> GuildCfg:
-        """Нет секции — пустая: бот на таком сервере только отчитывается."""
+        """Нет секции — пустая: ролей нет, служебного канала нет; команды отвечают только спросившему."""
         return self.guild.get(guild_id) or GuildCfg()
+
+
+def _section(cls, raw: dict, where: str):
+    """dataclass из секции TOML; неизвестный ключ (опечатка) — понятная ошибка вместо TypeError при старте."""
+    known = {f.name for f in fields(cls)}
+    if bad := set(raw) - known:
+        raise SystemExit(f"конфиг, секция {where}: неизвестные ключи {sorted(bad)}; допустимы {sorted(known)}")
+    return cls(**raw)
 
 
 def load_config(path: str = "config.toml") -> Config:
@@ -67,8 +75,8 @@ def load_config(path: str = "config.toml") -> Config:
         raise SystemExit("guilds в конфиге обязателен: список id серверов, на которых работает бот")
     return Config(
         guilds=[int(g) for g in raw["guilds"]],
-        guild={int(k): GuildCfg(**v) for k, v in raw.get("guild", {}).items()},
-        admit=Admit(**raw.get("admit", {})),
+        guild={int(k): _section(GuildCfg, v, f"guild.{k}") for k, v in raw.get("guild", {}).items()},
+        admit=_section(Admit, raw.get("admit", {}), "admit"),
         dry_run=bool(raw.get("dry_run", True)),
         base_url=raw.get("base_url", ""),
         repo_url=raw.get("repo_url", ""),

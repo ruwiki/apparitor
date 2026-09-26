@@ -9,15 +9,15 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import datetime as dt
 import logging
 import os
 import sqlite3
 import threading
 
+from .models import now_ts, parse_ts
+
 log = logging.getLogger("apparitor.store")
 TOOLSDB_HOST = "tools.db.svc.wikimedia.cloud"
-TS_FMT = "%Y-%m-%dT%H:%M:%SZ"
 
 SCHEMA = {
     "links": """(discord_id bigint primary key, wiki_name varchar(255) not null,
@@ -30,14 +30,6 @@ SCHEMA = {
                target varchar(255), detail text)""",
 }
 INDEXES = ["create index {ine} pending_code on pending (code)"]
-
-
-def now_ts() -> str:
-    return dt.datetime.now(dt.UTC).strftime(TS_FMT)
-
-
-def parse_ts(s: str) -> dt.datetime:
-    return dt.datetime.strptime(s, TS_FMT).replace(tzinfo=dt.UTC)
 
 
 class Store:

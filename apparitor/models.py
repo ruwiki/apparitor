@@ -2,7 +2,18 @@
 
 from __future__ import annotations
 
+import datetime as dt
 from dataclasses import dataclass, field
+
+TS_FMT = "%Y-%m-%dT%H:%M:%SZ"
+
+
+def now_ts() -> str:
+    return dt.datetime.now(dt.UTC).strftime(TS_FMT)
+
+
+def parse_ts(s: str) -> dt.datetime:
+    return dt.datetime.strptime(s, TS_FMT).replace(tzinfo=dt.UTC)
 
 
 @dataclass
@@ -20,6 +31,10 @@ class UserInfo:
     locked: bool = False  # CentralAuth lock; известен только при запросе глобальных данных
 
     @property
+    def labels_text(self) -> str:
+        return ", ".join(self.labels) or "без флагов"
+
+    @property
     def sysop(self) -> bool:
         return "sysop" in self.groups
 
@@ -35,7 +50,6 @@ class Decision:
 
     ok: bool
     why: str
-    want: list[str]
     add: list[str]
     remove: list[str]
 

@@ -45,14 +45,14 @@ Discord-бот доступов для серверов сообщества р�
 ## Структура кода
 | модуль | что | зависимости |
 |---|---|---|
-| `models.py` | `UserInfo`, `Decision` — типы между слоями | — |
+| `models.py` | `UserInfo`, `Decision`, формат времени — типы между слоями | — |
 | `config.py` | TOML → `Config`/`GuildCfg`/`Admit` | — |
 | `mw.py` | клиент API MediaWiki (одна вики, бэкофф 429); сюда же ляжет запись для арбвики | aiohttp |
 | `ruwiki.py` | рувики как источник флагов: группы, статусы из JSON гаджета, CentralAuth → `UserInfo` | mw |
 | `rules.py` | впуск и роли: чистые функции | config, models |
 | `match.py` | сопоставление по нику: кандидаты, выбор | models |
 | `audit.py` | сборка отчёта /audit из строк | models |
-| `store.py` | ToolsDB/sqlite: связки, ожидания, кандидаты, журнал | pymysql |
+| `store.py` | ToolsDB/sqlite: связки, ожидания, кандидаты, журнал | models, pymysql |
 | `bot.py` | Discord-клиент, отчёты, применение решения | всё выше |
 | `commands/` | slash-команды: `identity` (все), `admin` (Manage Roles) | bot |
 | `web.py` | OAuth-колбэк, healthz | bot |

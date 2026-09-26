@@ -4,12 +4,11 @@
 
 from __future__ import annotations
 
+import asyncio
 import datetime as dt
 import json
 import logging
 import time
-
-import aiohttp
 
 from .models import UserInfo
 from .mw import Client
@@ -118,21 +117,29 @@ def pack(
 
 
 # --- клиент ------------------------------------------------------------------------
+GLOBAL_PARALLEL = 5  # одновременных globaluserinfo: запрос только по одному имени, последовательно — N+1
+
+
 class RuWiki:
-    def __init__(self, session: aiohttp.ClientSession):
-        self.mw = Client(session, API)
+    def __init__(self, mw: Client | None = None):
+        self.mw = mw or Client(API)
         self._statuses: tuple[float, dict[str, set[str]]] = (0.0, {})
+        self._sem = asyncio.Semaphore(GLOBAL_PARALLEL)
 
     async def statuses(self) -> dict[str, set[str]]:
-        """Статусы по JSON гаджета, кэш на STATUS_TTL. При сбое — прежний кэш (или пусто) и предупреждение в лог."""
+        """Статусы по JSON гаджета, кэш на STATUS_TTL (пустой ответ тоже кэшируется — с предупреждением,
+        иначе пропавшая страница даёт запрос на каждый вызов). При сбое сети — прежний кэш и предупреждение."""
         ts, cached = self._statuses
-        if cached and time.monotonic() - ts < STATUS_TTL:
+        if ts and time.monotonic() - ts < STATUS_TTL:
             return cached
         try:
-            out = parse_statuses(await self.mw.raw_page(STATUS_PAGE) or "{}")
+            content = await self.mw.raw_page(STATUS_PAGE)
+            out = parse_statuses(content) if content else {}
         except Exception as e:  # любой сбой чтения: флаги из групп важнее, статусы подождут
             log.warning("%s не прочитан (%s); статусы %s", STATUS_PAGE, e, "из кэша" if cached else "не учитываются")
             return cached
+        if not out:
+            log.warning("%s пуст или отсутствует: статусы (ПИ+, клерки, арбитры…) не учитываются", STATUS_PAGE)
         self._statuses = (time.monotonic(), out)
         return out
 
@@ -150,31 +157,43 @@ class RuWiki:
         global_fallback — имя без локальной учётки искать в CentralAuth: только для точного имени
         (/auth, /status); по нику это ловит чужие пустые учётки других разделов."""
         out: dict[str, UserInfo | None] = {}
-        names = [n for n in names if valid_name(n)]
+        names = list(dict.fromkeys(n for n in names if valid_name(n)))
         st = await self.statuses() if names else {}
         for i in range(0, len(names), 50):
             chunk = names[i : i + 50]
-            asked = {norm_name(n): n for n in chunk}
+            asked: dict[str, list[str]] = {}  # «carn» и «Carn» — один ответ на два запрошенных имени
+            for n in chunk:
+                asked.setdefault(norm_name(n), []).append(n)
             d = await self.mw.get(
                 action="query",
                 list="users",
-                ususers="|".join(chunk),
+                ususers="|".join(asked),
                 usprop="groups|editcount|registration|blockinfo",
             )
-            for u in d["query"]["users"]:
-                key = asked.get(norm_name(u.get("name", "")), u.get("name", ""))
+            users = d["query"]["users"]
+            globals_ = {}
+            if with_global:
+                found = [u["name"] for u in users if "missing" not in u and "invalid" not in u]
+                globals_ = dict(
+                    zip(found, await asyncio.gather(*(self._global_limited(n) for n in found)), strict=True)
+                )
+            for u in users:
+                name = u.get("name", "")
+                keys = asked.get(norm_name(name), [name])
                 if "invalid" in u:
-                    out[key] = None
-                    continue
-                if "missing" in u:
-                    out[key] = await self._global_only(u.get("name", "")) if global_fallback else None
-                    continue
-                gg, locked = [], False
-                if with_global:
-                    gui = await self.global_info(u["name"])
-                    gg, locked = gui.get("groups", []), bool(gui.get("locked"))
-                out[key] = pack(u, gg, st.get(u["name"], set()), locked)
+                    info = None
+                elif "missing" in u:
+                    info = await self._global_only(name) if global_fallback else None
+                else:
+                    gui = globals_.get(name, {})
+                    info = pack(u, gui.get("groups", []), st.get(name, set()), bool(gui.get("locked")))
+                for k in keys:
+                    out[k] = info
         return out
+
+    async def _global_limited(self, name: str) -> dict:
+        async with self._sem:
+            return await self.global_info(name)
 
     async def _global_only(self, name: str) -> UserInfo | None:
         """Учётка без локального аккаунта в рувики (сотрудники Фонда, другие разделы): данные из CentralAuth."""
