@@ -284,16 +284,6 @@ def register(bot: Apparitor):
                 lines.append(f"{name}: {text}")
         await inter.followup.send("\n".join(lines)[:1900] or "Изменений нет.", ephemeral=True)
 
-
-def load_env() -> None:
-    """Локальный .env (DISCORD_TOKEN, OAUTH_*, TOOL_TOOLSDB_*) в окружение; на Toolforge всё уже в envvars."""
-    if os.path.exists(".env"):
-        for line in open(".env"):
-            if "=" in line and not line.startswith("#"):
-                k, v = line.strip().split("=", 1)
-                os.environ.setdefault(k, v)
-
-
     @tree.command(name="audit", description="Сопоставить всех участников сервера с рувики по нику (только Manage Roles)")
     @app_commands.guild_only()
     @app_commands.checks.has_permissions(manage_roles=True)
@@ -335,6 +325,17 @@ def load_env() -> None:
                 log.warning("audit: нет права писать в #%s", ch.name)
         await inter.followup.send(head + "\nПолная таблица — в служебном канале." if ch else head, ephemeral=True)
         await bot.store.log(str(inter.user.id), "audit", str(guild.id), head)
+
+
+def load_env() -> None:
+    """Локальный .env (DISCORD_TOKEN, OAUTH_*, TOOL_TOOLSDB_*) в окружение; на Toolforge всё уже в envvars."""
+    if os.path.exists(".env"):
+        for line in open(".env"):
+            if "=" in line and not line.startswith("#"):
+                k, v = line.strip().split("=", 1)
+                os.environ.setdefault(k, v)
+
+
 
 
 def read_token() -> str:
