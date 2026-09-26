@@ -5,7 +5,9 @@ import os
 
 os.environ.pop("PORT", None)
 os.environ.setdefault("DISCORD_TOKEN", "x")
-from apparitor.bot import Apparitor, load_config, load_env, read_token, register
+from apparitor.bot import Apparitor
+from apparitor.commands import register
+from apparitor.config import load_config, load_env, read_token
 from apparitor.store import Store
 
 load_env()

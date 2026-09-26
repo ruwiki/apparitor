@@ -1,31 +1,37 @@
+from apparitor import rules
+from apparitor.config import guild_cfg
 from tests.conftest import GUILD, info
 
 RUWIKI = 1044474820089368666
 CLERKS = 1071563548678959134
 
 
-def test_admissible_thresholds(bot):
-    assert bot.admissible(info())[0]
-    assert not bot.admissible(info(blocked=True))[0]
-    bot.cfg["admit"]["min_edits"] = 100
-    assert not bot.admissible(info(editcount=99))[0]
-    bot.cfg["admit"]["min_age_days"] = 0
-    assert bot.admissible(info(editcount=100, registration="2999-01-01T00:00:00Z"))[0], (
-        "0 = не проверять даже при сдвиге часов"
-    )
+def test_admissible_thresholds():
+    assert rules.admissible({}, info())[0]
+    assert not rules.admissible({}, info(blocked=True))[0]
+    assert not rules.admissible({"min_edits": 100}, info(editcount=99))[0]
+    assert rules.admissible({"min_age_days": 0}, info(registration="2999-01-01T00:00:00Z"))[0], "0 = не проверять"
+    assert not rules.admissible({"min_age_days": 30}, info(registration="2999-01-01T00:00:00Z"))[0]
 
 
-def test_wanted_roles_per_guild(bot):
+def test_wanted_roles_per_guild(cfg):
     i = info(groups=["sysop", "checkuser", "suppress"], sysop=True, apat=True)
-    assert bot.wanted_roles(GUILD, i) == ["✔", "Администратор"]
-    assert bot.wanted_roles(RUWIKI, i) == ["аутентифицирован(а)", "Администратор", "ЧЮ", "Ревизор"]
-    assert bot.wanted_roles(CLERKS, i) == ["ЧЮ"]
-    assert bot.wanted_roles(999, i) == []
+    assert rules.wanted_roles(guild_cfg(cfg, GUILD), i) == ["✔", "Администратор"]
+    assert rules.wanted_roles(guild_cfg(cfg, RUWIKI), i) == ["аутентифицирован(а)", "Администратор", "ЧЮ", "Ревизор"]
+    assert rules.wanted_roles(guild_cfg(cfg, CLERKS), i) == ["ЧЮ"]
+    assert rules.wanted_roles(guild_cfg(cfg, 999), i) == []
 
 
-def test_managed_roles_include_remove_on_confirm(bot):
-    assert "🆕 new user" in bot.managed_roles(GUILD)
-    assert "Арбитр" in bot.managed_roles(CLERKS)
+def test_managed_and_diff(cfg):
+    g = guild_cfg(cfg, GUILD)
+    assert "🆕 new user" in rules.managed_roles(g)
+    add, rem = rules.role_diff({"🆕 new user", "Модератор чата"}, {"✔"}, rules.managed_roles(g))
+    assert add == ["✔"] and rem == ["🆕 new user"], "чужие роли (Модератор чата) не трогаем"
+
+
+def test_decide_reject_strips_managed(cfg):
+    d = rules.decide({}, guild_cfg(cfg, GUILD), info(blocked=True), {"✔", "Администратор", "Модератор чата"})
+    assert not d["ok"] and d["add"] == [] and d["remove"] == ["Администратор", "✔"]
 
 
 def test_commands_registered(bot):

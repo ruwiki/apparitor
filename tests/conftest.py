@@ -2,7 +2,9 @@ import os
 
 import pytest
 
-from apparitor.bot import Apparitor, load_config, register
+from apparitor.bot import Apparitor
+from apparitor.commands import register
+from apparitor.config import load_config
 
 GUILD = 223183550965481473
 
