@@ -156,7 +156,7 @@ def register(bot: Apparitor):
         infos |= await wiki.users_info(bot.http_session, list(need_global), with_global=True)
         verified, by_nick, unmatched, new_cands, n_linked, n_nick = [], [], [], [], 0, 0
         for m in members:
-            name, info = cand[m.id], infos.get(cand[m.id])
+            info = infos.get(cand[m.id])
             have = {r.name for r in m.roles}
             mine = ", ".join(sorted(have & managed)) or "—"
             who = m.display_name + (f" (логин {m.name})" if m.name != m.display_name else "")
@@ -174,7 +174,8 @@ def register(bot: Apparitor):
             why = f"; отказ: {d['why']}" if not d["ok"] else ""
             line = (
                 f"{who} ↔ {info['name']} ({', '.join(info['labels']) or 'без флагов'}{why}): "
-                f"роли бота сейчас {mine}; бот выдал бы {', '.join(d['add']) or '—'}, снял бы {', '.join(d['remove']) or '—'}"
+                f"роли бота сейчас {mine}; бот выдал бы {', '.join(d['add']) or '—'}, "
+                f"снял бы {', '.join(d['remove']) or '—'}"
             )
             (verified if m.id in linked else by_nick).append(line)
         if new_cands:
@@ -188,10 +189,12 @@ def register(bot: Apparitor):
             [
                 head,
                 "",
-                f"== Расхождения по подтверждённым связкам ({len(verified)}) — человек тот; ошибка возможна в карте ролей ==",
+                f"== Расхождения по подтверждённым связкам ({len(verified)}) — человек тот, "
+                "ошибка возможна только в карте ролей ==",
                 *(verified or ["нет"]),
                 "",
-                f"== Расхождения по нику ({len(by_nick)}) — НЕ подтверждено: ник мог совпасть с чужим участником рувики ==",
+                f"== Расхождения по нику ({len(by_nick)}) — НЕ подтверждено: "
+                "ник мог совпасть с чужим участником рувики ==",
                 *(by_nick or ["нет"]),
                 "",
                 f"== Не сопоставлены ({len(unmatched)}) — ник не совпал ни с одним участником рувики ==",
