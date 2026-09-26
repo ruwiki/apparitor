@@ -117,7 +117,7 @@ async def statuses(session: aiohttp.ClientSession) -> dict[str, set[str]]:
     return out
 
 
-def _pack(u: dict, global_groups: list[str], status_groups: set[str] = frozenset()) -> dict:
+def _pack(u: dict, global_groups: list[str], status_groups: set[str] = frozenset(), locked: bool = False) -> dict:
     groups = [g for g in u.get("groups", []) if g not in HIDDEN]
     groups += [g for g in STATUS_GROUPS.values() if g in status_groups and g not in groups]
     groups += [g for g in global_groups if g in GLOBAL_KEEP]
@@ -128,8 +128,9 @@ def _pack(u: dict, global_groups: list[str], status_groups: set[str] = frozenset
         "labels": [LABELS.get(g, g) for g in groups],
         "editcount": u.get("editcount", 0),
         "registration": u.get("registration"),
-        "blocked": "blockid" in u and not partial,  # частичная блокировка впуску не мешает
+        "blocked": ("blockid" in u and not partial) or locked,  # частичная блокировка впуску не мешает
         "blocked_partial": partial,
+        "locked": locked,  # глобальная блокировка учётки (CentralAuth lock); известна только при with_global
         "sysop": "sysop" in groups,
         # АПАТ: своя группа либо группы, включающие её права.
         "apat": bool({"autoreview", "editor", "sysop"} & set(groups)),
@@ -159,11 +160,12 @@ async def users_info(
             if "missing" in u or "invalid" in u:
                 out[key] = None
                 continue
-            gg = []
+            gg, locked = [], False
             if with_global:
                 g = await _get(session, action="query", meta="globaluserinfo", guiuser=u["name"], guiprop="groups")
-                gg = g["query"].get("globaluserinfo", {}).get("groups", [])
-            out[key] = _pack(u, gg, st.get(u["name"], set()))
+                gui = g["query"].get("globaluserinfo", {})
+                gg, locked = gui.get("groups", []), bool(gui.get("locked"))
+            out[key] = _pack(u, gg, st.get(u["name"], set()), locked)
     return out
 
 

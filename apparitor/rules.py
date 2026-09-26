@@ -10,7 +10,7 @@ from .store import parse_ts
 def admissible(admit: dict, info: dict) -> tuple[bool, str]:
     """Критерии впуска; порог 0 = не проверять."""
     if admit.get("reject_blocked", True) and info["blocked"]:
-        return False, "аккаунт заблокирован"
+        return False, "учётка глобально заблокирована (lock)" if info.get("locked") else "аккаунт заблокирован"
     if admit.get("min_edits") and info["editcount"] < admit["min_edits"]:
         return False, f"правок {info['editcount']} < {admit['min_edits']}"
     if admit.get("min_age_days") and info["registration"]:

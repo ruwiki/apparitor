@@ -31,6 +31,8 @@ def test_partial_block_is_not_block():
     i = wiki._pack(u, [])
     assert not i["blocked"] and i["blocked_partial"]
     assert wiki._pack({"name": "F", "groups": [], "blockid": 1}, [])["blocked"]
+    i = wiki._pack({"name": "L", "groups": []}, [], locked=True)
+    assert i["blocked"] and i["locked"], "глобальный lock = отказ"
 
 
 def test_norm_name_like_mediawiki():
