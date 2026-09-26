@@ -28,6 +28,16 @@ steward = "Стюард"
 
 # --- Русская Википедия ---
 [guild.1044474820089368666]
-report_channel_id = 0                    # заполнить после добавления бота
+report_channel_id = 1212507148982947901   # #боты
 [guild.1044474820089368666.roles]
-admitted = ""
+admitted = "аутентифицирован(а)"
+apat = ""
+sysop = "Администратор"
+bureaucrat = "Бюрократ"
+checkuser = "ЧЮ"
+suppress = "Ревизор"
+interface-admin = "ИнтАдмин"
+engineer = "Инженер"
+closer = "ПИ"
+arbcom = "Арбитр"                          # только арбитры без флага админа (группа рувики так устроена)
+steward = "Стюард"
