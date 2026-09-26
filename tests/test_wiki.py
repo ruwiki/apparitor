@@ -33,6 +33,13 @@ def test_partial_block_is_not_block():
     assert wiki._pack({"name": "F", "groups": [], "blockid": 1}, [])["blocked"]
 
 
+def test_norm_name_like_mediawiki():
+    assert wiki.norm_name("bezik") == "Bezik"
+    assert wiki.norm_name("alex_nb_it") == "Alex nb it"
+    assert wiki.norm_name("Ле Лой") == "Ле Лой"
+    assert wiki.norm_name("ghuron ") == "Ghuron"
+
+
 def test_valid_name():
     assert wiki.valid_name("Ле Лой")
     for bad in ("a|b", "", "  ", "x#y", "[[z]]", "a" * 300):

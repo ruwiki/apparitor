@@ -67,6 +67,13 @@ GLOBAL_KEEP = {"steward", "global-sysop", "global-interface-editor", "founder", 
 BAD_CHARS = set("|#<>[]{}")
 
 
+def norm_name(name: str) -> str:
+    """Как MediaWiki: пробелы вместо подчёркиваний, первая буква заглавная. API возвращает имя уже в таком виде,
+    а ник в Discord может быть «bezik» — сопоставляем по нормализованному."""
+    name = name.strip().replace("_", " ")
+    return name[:1].upper() + name[1:]
+
+
 def valid_name(name: str) -> bool:
     return bool(name.strip()) and not (set(name) & BAD_CHARS) and len(name) <= 255
 
@@ -139,6 +146,7 @@ async def users_info(
     st = await statuses(session) if names else {}
     for i in range(0, len(names), 50):
         chunk = names[i : i + 50]
+        asked = {norm_name(n): n for n in chunk}  # ответ приходит с нормализованным именем; ключ ответа = как спросили
         d = await _get(
             session,
             action="query",
@@ -147,14 +155,15 @@ async def users_info(
             usprop="groups|editcount|registration|blockinfo",
         )
         for u in d["query"]["users"]:
+            key = asked.get(norm_name(u.get("name", "")), u.get("name", ""))
             if "missing" in u or "invalid" in u:
-                out[u.get("name", "")] = None
+                out[key] = None
                 continue
             gg = []
             if with_global:
                 g = await _get(session, action="query", meta="globaluserinfo", guiuser=u["name"], guiprop="groups")
                 gg = g["query"].get("globaluserinfo", {}).get("groups", [])
-            out[u["name"]] = _pack(u, gg, st.get(u["name"], set()))
+            out[key] = _pack(u, gg, st.get(u["name"], set()))
     return out
 
 
