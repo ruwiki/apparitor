@@ -13,10 +13,10 @@ from apparitor.store import Store
 load_env()
 read_token()
 cfg = load_config(os.environ.get("APPARITOR_CONFIG", "config.example.toml"))
-cfg["db"] = {"kind": "sqlite", "sqlite_path": ":memory:"}
+cfg.db = {"kind": "sqlite", "sqlite_path": ":memory:"}
 bot = Apparitor(cfg)
 register(bot)
 names = sorted(c.name for c in bot.tree.get_commands())
 assert names == ["audit", "auth", "confirm", "status", "sync", "verify"], names
-asyncio.run(Store(cfg["db"]).health())
+asyncio.run(Store(cfg.db).health())
 print("smoke ok:", names)

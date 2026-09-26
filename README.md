@@ -42,6 +42,24 @@ Discord-бот доступов для серверов сообщества р�
 
 Обновление: `toolforge build start …` и `toolforge webservice restart`. Логи: `toolforge webservice logs`.
 
+## Структура кода
+| модуль | что | зависимости |
+|---|---|---|
+| `models.py` | `UserInfo`, `Decision` — типы между слоями | — |
+| `config.py` | TOML → `Config`/`GuildCfg`/`Admit` | — |
+| `mw.py` | клиент API MediaWiki (одна вики, бэкофф 429); сюда же ляжет запись для арбвики | aiohttp |
+| `ruwiki.py` | рувики как источник флагов: группы, статусы из JSON гаджета, CentralAuth → `UserInfo` | mw |
+| `rules.py` | впуск и роли: чистые функции | config, models |
+| `match.py` | сопоставление по нику: кандидаты, выбор | models |
+| `audit.py` | сборка отчёта /audit из строк | models |
+| `store.py` | ToolsDB/sqlite: связки, ожидания, кандидаты, журнал | pymysql |
+| `bot.py` | Discord-клиент, отчёты, применение решения | всё выше |
+| `commands/` | slash-команды: `identity` (все), `admin` (Manage Roles) | bot |
+| `web.py` | OAuth-колбэк, healthz | bot |
+
+Новый источник (арбвики, Google Groups, WikiAuthBot) = свой модуль уровня `ruwiki.py`, который отдаёт
+данные типами из `models.py`; правила и команды его не знают.
+
 ## Локальная отладка
 `cp config.example.toml config.toml`, `.env` с теми же переменными, зависимости
 `pip install --target vendor -r requirements.txt`, `./run.sh`. Хранилище задаётся в конфиге: `[db] kind = "sqlite"` локально, `"toolsdb"` на Toolforge.

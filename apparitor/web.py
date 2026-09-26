@@ -29,8 +29,8 @@ def make_app(bot) -> web.Application:
 
 async def index(req: web.Request) -> web.Response:
     bot = req.app[BOT]
-    mode = "холостой" if bot.cfg.get("dry_run", True) else "боевой"
-    return web.Response(text=f"Apparitor: бот доступов АК рувики. Режим: {mode}. Код: {bot.cfg.get('repo_url', '')}\n")
+    mode = "холостой" if bot.cfg.dry_run else "боевой"
+    return web.Response(text=f"Apparitor: бот доступов АК рувики. Режим: {mode}. Код: {bot.cfg.repo_url}\n")
 
 
 async def healthz(req: web.Request) -> web.Response:

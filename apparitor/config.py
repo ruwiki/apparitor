@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import tomllib
+from dataclasses import dataclass, field
 
 
 def load_env(path: str = ".env") -> None:
@@ -24,17 +25,52 @@ def read_token() -> str:
     return token
 
 
-def load_config(path: str = "config.toml") -> dict:
+@dataclass
+class Admit:
+    """Критерии впуска; 0 = не проверять."""
+
+    min_edits: int = 0
+    min_age_days: int = 0
+    reject_blocked: bool = True
+
+
+@dataclass
+class GuildCfg:
+    """Секция сервера. roles: условие -> имя роли ("" = не использовать); admitted/apat — условия,
+    остальные ключи = группы вики и псевдогруппы статусов."""
+
+    report_channel_id: int = 0
+    report_names: bool = False
+    roles: dict[str, str] = field(default_factory=dict)
+    remove_on_confirm: list[str] = field(default_factory=list)
+
+
+@dataclass
+class Config:
+    guilds: list[int]
+    guild: dict[int, GuildCfg]
+    admit: Admit
+    dry_run: bool = True
+    base_url: str = ""
+    repo_url: str = ""
+    db: dict = field(default_factory=dict)
+
+    def for_guild(self, guild_id: int) -> GuildCfg:
+        """Нет секции — пустая: бот на таком сервере только отчитывается."""
+        return self.guild.get(guild_id) or GuildCfg()
+
+
+def load_config(path: str = "config.toml") -> Config:
     with open(path, "rb") as f:
-        cfg = tomllib.load(f)
-    if not cfg.get("guilds"):
+        raw = tomllib.load(f)
+    if not raw.get("guilds"):
         raise SystemExit("guilds в конфиге обязателен: список id серверов, на которых работает бот")
-    cfg["guild"] = {int(k): v for k, v in cfg.get("guild", {}).items()}
-    cfg.setdefault("admit", {})
-    cfg.setdefault("dry_run", True)
-    return cfg
-
-
-def guild_cfg(cfg: dict, guild_id: int) -> dict:
-    """Секция сервера: report_channel_id, report_names, roles, remove_on_confirm. Нет секции — пустая."""
-    return cfg["guild"].get(guild_id, {})
+    return Config(
+        guilds=[int(g) for g in raw["guilds"]],
+        guild={int(k): GuildCfg(**v) for k, v in raw.get("guild", {}).items()},
+        admit=Admit(**raw.get("admit", {})),
+        dry_run=bool(raw.get("dry_run", True)),
+        base_url=raw.get("base_url", ""),
+        repo_url=raw.get("repo_url", ""),
+        db=raw.get("db", {}),
+    )
