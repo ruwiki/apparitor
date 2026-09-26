@@ -47,7 +47,7 @@ async def user_info(session: aiohttp.ClientSession, name: str) -> dict | None:
         "registration": u.get("registration"),
         "blocked": "blockid" in u,
         "sysop": "sysop" in groups,
-        # АПАТ: своя группа, либо права её включающие. Допущение 26.09, сверить с Черепашкой.
+        # АПАТ: своя группа либо группы, включающие её права.
         "apat": bool({"autoreview", "editor", "sysop"} & set(groups)),
     }
 
