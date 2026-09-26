@@ -143,7 +143,7 @@ def _pack(u: dict, global_groups: list[str], status_groups: set[str] = frozenset
 
 
 async def users_info(
-    session: aiohttp.ClientSession, names: list[str], with_global: bool = True
+    session: aiohttp.ClientSession, names: list[str], with_global: bool = True, global_fallback: bool = False
 ) -> dict[str, dict | None]:
     """Пакетно (до 50 имён): имя -> info | None. Глобальные группы — отдельным запросом на имя,
     только для тех, у кого они могут быть (стюарды и т.п. редки, но запрос дешёвый)."""
@@ -165,8 +165,10 @@ async def users_info(
             if "invalid" in u:
                 out[key] = None
                 continue
-            if "missing" in u:  # нет локальной учётки — может быть глобальная (сотрудники Фонда, другие разделы)
-                out[key] = await _global_only(session, u.get("name", ""))
+            if "missing" in u:
+                # нет локальной учётки — может быть глобальная (сотрудники Фонда, другие разделы). Только для
+                # точного имени (/auth, /status): по нику это ловит чужие пустые учётки других разделов
+                out[key] = await _global_only(session, u.get("name", "")) if global_fallback else None
                 continue
             gg, locked = [], False
             if with_global:
@@ -196,7 +198,7 @@ async def user_info(session: aiohttp.ClientSession, name: str) -> dict | None:
     """groups (локальные + глобальные), editcount, registration, blocked. None — нет участника."""
     if not valid_name(name):
         return None
-    res = await users_info(session, [name])
+    res = await users_info(session, [name], global_fallback=True)
     return next(iter(res.values()), None)
 
 
