@@ -2,7 +2,7 @@
 base_url = "https://apparitor.toolforge.org"
 repo_url = "https://github.com/ruwiki/apparitor"
 dry_run = true                       # только отчёты, ролей не трогать
-guilds = [223183550965481473, 1044474820089368666]
+guilds = [223183550965481473, 1044474820089368666, 1071563548678959134]
 
 [db]
 kind = "toolsdb"
@@ -41,3 +41,12 @@ engineer = "Инженер"
 closer = "ПИ"
 arbcom = "Арбитр"                          # только арбитры без флага админа (группа рувики так устроена)
 steward = "Стюард"
+
+# --- Clerks (АК) ---
+[guild.1071563548678959134]
+report_channel_id = 1553431285798543390   # #bot
+[guild.1071563548678959134.roles]
+admitted = ""
+apat = ""
+arbcom = "Арбитр"                          # только арбитры без флага админа; полный источник — группы арбвики
+checkuser = "ЧЮ"
