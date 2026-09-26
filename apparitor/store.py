@@ -167,6 +167,12 @@ class Store:
         rows = await self._run(lambda: self._exec("select discord_id, wiki_name from links").fetchall())
         return [(int(a), b) for a, b in rows]
 
+    async def set_candidates(self, guild_id: int, rows: list[tuple[int, str, str]]) -> None:
+        """Сопоставление по нику (не подтверждено человеком): (discord_id, wiki_name, source)."""
+        sql = self._upsert_sql("candidates", "guild_id, discord_id, wiki_name, source, seen_at", 5)
+        ts = now_ts()
+        await self._run(self._tx, [(sql, (guild_id, did, name, src, ts)) for did, name, src in rows])
+
     async def log(self, actor: str, action: str, target: str, detail: str = "") -> None:
         await self._run(self._exec, "insert into log (ts, actor, action, target, detail) values (?,?,?,?,?)",
                         (now_ts(), actor, action, target, detail))
