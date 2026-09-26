@@ -6,13 +6,14 @@ import os
 
 from aiohttp import web
 
-from .bot import Apparitor, load_config, read_token
+from .bot import Apparitor, load_config, load_env, read_token
 from .web import make_app
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
 
 async def main():
+    load_env()
     cfg = load_config(os.environ.get("APPARITOR_CONFIG", "config.toml"))
     bot = Apparitor(cfg)
     runner = web.AppRunner(make_app(bot))

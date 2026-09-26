@@ -11,7 +11,7 @@ import discord
 from discord import app_commands
 
 from . import wiki
-from .store import Store
+from .store import Store, parse_ts
 from .web import new_state
 
 log = logging.getLogger("apparitor")
@@ -30,7 +30,7 @@ class Apparitor(discord.Client):
     def __init__(self, cfg: dict):
         super().__init__(intents=discord.Intents.default())  # members/message_content не включаем
         self.cfg = cfg
-        self.store = Store(cfg["db"])
+        self.store = Store(cfg.get("db", {}))
         self.tree = app_commands.CommandTree(self)
         self.tree.on_error = self.on_command_error
         self.http_session: aiohttp.ClientSession | None = None
@@ -91,7 +91,7 @@ class Apparitor(discord.Client):
         if a.get("min_edits") and info["editcount"] < a["min_edits"]:
             return False, f"правок {info['editcount']} < {a['min_edits']}"
         if a.get("min_age_days") and info["registration"]:
-            reg = dt.datetime.strptime(info["registration"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=dt.timezone.utc)
+            reg = parse_ts(info["registration"])
             age = (dt.datetime.now(dt.timezone.utc) - reg).days
             if age < a["min_age_days"]:
                 return False, f"аккаунту {age} дн. < {a['min_age_days']}"
@@ -120,7 +120,7 @@ class Apparitor(discord.Client):
         want = set(self.wanted_roles(info)) if ok else set()
         added, removed, missing = await self.apply_roles(member, info, want, why if not ok else "")
         if not ok:
-            self.store.log(str(member.id), "reject", info["name"], why)
+            await self.store.log(str(member.id), "reject", info["name"], why)
             return f"Критерии впуска не пройдены: {why}."
         if self.cfg.get("dry_run", True):
             return "Холостой режим: роли не менялись, отчёт в служебном канале."
@@ -147,7 +147,7 @@ class Apparitor(discord.Client):
                 await member.add_roles(*add, reason=f"Apparitor: {info['name']} {info['labels']}")
             if rem:
                 await member.remove_roles(*rem, reason=f"Apparitor: {reason or 'sync'}")
-        self.store.log(str(member.id), "roles-dry" if dry else "roles", info["name"],
+        await self.store.log(str(member.id), "roles-dry" if dry else "roles", info["name"],
                        f"+{[r.name for r in add]} -{[r.name for r in rem]}")
         return [r.name for r in add], [r.name for r in rem], missing
 
@@ -178,7 +178,7 @@ def register(bot: Apparitor):
             await inter.response.send_message("OAuth ещё не настроен, используйте `/verify <имя>`.", ephemeral=True)
             return
         state = new_state()
-        bot.store.set_pending(inter.user.id, "", state)
+        await bot.store.set_pending(inter.user.id, "", state)
         await inter.response.send_message(
             f"Войдите своей учёткой Викимедиа по ссылке (30 минут): {base}/oauth/start?s={state}", ephemeral=True)
         await bot.report(f"/auth от {inter.user.mention}")
@@ -194,7 +194,7 @@ def register(bot: Apparitor):
             await inter.followup.send(f"В рувики нет участника «{wiki_name}».", ephemeral=True)
             return
         code = "apparitor-" + secrets.token_hex(3)
-        bot.store.set_pending(inter.user.id, info["name"], code)
+        await bot.store.set_pending(inter.user.id, info["name"], code)
         await inter.followup.send(
             f"Сделайте любую правку в рувики от имени **{info['name']}** (например, в своей песочнице) "
             f"с описанием правки `{code}`, затем выполните `/confirm`. Код действует 30 минут.", ephemeral=True)
@@ -202,7 +202,7 @@ def register(bot: Apparitor):
     @tree.command(name="confirm", description="Проверить правку с кодом и получить роли")
     @app_commands.guild_only()
     async def confirm(inter: discord.Interaction):
-        p = bot.store.get_pending(inter.user.id)
+        p = await bot.store.get_pending(inter.user.id)
         if not p or not p["wiki_name"]:
             await inter.response.send_message("Сначала `/verify <имя>`.", ephemeral=True)
             return
@@ -216,7 +216,7 @@ def register(bot: Apparitor):
             await inter.followup.send(f"Правки с описанием `{p['code']}` от {p['wiki_name']} не вижу. "
                                       f"Подождите минуту после сохранения и повторите.", ephemeral=True)
             return
-        bot.store.link(inter.user.id, p["wiki_name"], "edit-summary", revid)
+        await bot.store.link(inter.user.id, p["wiki_name"], "edit-summary", revid)
         info = await wiki.user_info(bot.http_session, p["wiki_name"])
         text = await bot.evaluate(inter.user, info, p["wiki_name"])
         await inter.followup.send(f"Подтверждено (revid {revid}). {fmt(info) if info else ''}\n{text}", ephemeral=True)
@@ -225,7 +225,7 @@ def register(bot: Apparitor):
     @app_commands.guild_only()
     @app_commands.describe(wiki_name="Имя в рувики; пусто = свой привязанный аккаунт")
     async def status(inter: discord.Interaction, wiki_name: str | None = None):
-        name = wiki_name or bot.store.wiki_of(inter.user.id)
+        name = wiki_name or await bot.store.wiki_of(inter.user.id)
         if not name:
             await inter.response.send_message("Аккаунт не привязан: `/auth` или `/verify <имя>`.", ephemeral=True)
             return
@@ -239,7 +239,7 @@ def register(bot: Apparitor):
     @app_commands.checks.has_permissions(manage_roles=True)
     async def sync(inter: discord.Interaction):
         await inter.response.defer(ephemeral=True)
-        links = bot.store.all_links()
+        links = await bot.store.all_links()
         infos = await wiki.users_info(bot.http_session, [n for _, n in links])
         lines = []
         for did, name in links:
@@ -253,13 +253,16 @@ def register(bot: Apparitor):
         await inter.followup.send("\n".join(lines)[:1900] or "Изменений нет.", ephemeral=True)
 
 
-def read_token() -> str:
-    """DISCORD_TOKEN из окружения (Toolforge envvars) или локального .env; .env также подгружает OAUTH_*."""
+def load_env() -> None:
+    """Локальный .env (DISCORD_TOKEN, OAUTH_*, TOOL_TOOLSDB_*) в окружение; на Toolforge всё уже в envvars."""
     if os.path.exists(".env"):
         for line in open(".env"):
             if "=" in line and not line.startswith("#"):
                 k, v = line.strip().split("=", 1)
                 os.environ.setdefault(k, v)
+
+
+def read_token() -> str:
     token = os.environ.get("DISCORD_TOKEN")
     if not token:
         raise SystemExit("DISCORD_TOKEN не задан (.env или окружение)")

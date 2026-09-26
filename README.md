@@ -22,7 +22,7 @@ Discord-бот доступов для серверов сообщества р�
 
 ## Развёртывание (Toolforge, тул `apparitor`)
 Один процесс `web` из `Procfile`: Discord-клиент и HTTP на `$PORT`. Хранилище — ToolsDB
-(база `<user>__apparitor`, создаётся один раз: `sql tools` → `create database ...`).
+(база `<user>__apparitor`, создаётся один раз: `sql tools` → `create database <user>__apparitor character set utf8mb4`).
 Секреты и конфиг — через envvars, в репо их нет:
 
     toolforge envvars create DISCORD_TOKEN …
@@ -37,4 +37,4 @@ Discord-бот доступов для серверов сообщества р�
 
 ## Локальная отладка
 `cp config.example.toml config.toml`, `.env` с теми же переменными, зависимости
-`pip install --target vendor -r requirements.txt`, `./run.sh`. Без TOOL_TOOLSDB_USER хранилище — sqlite.
+`pip install --target vendor -r requirements.txt`, `./run.sh`. Хранилище задаётся в конфиге: `[db] kind = "sqlite"` локально, `"toolsdb"` на Toolforge.

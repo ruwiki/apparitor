@@ -1,10 +1,13 @@
-db = "apparitor.db"   # sqlite только для локальной отладки; на Toolforge — ToolsDB через envvars
 base_url = "https://apparitor.toolforge.org"
 repo_url = "https://github.com/ruwiki/apparitor"
 guild_id = 223183550965481473        # Сообщество Викимедиа
 report_channel_id = 995099313648701600   # #moderbot
 dry_run = true                       # только отчёты, ролей не трогать
 remove_on_confirm = ["🆕 new user"]
+
+[db]
+kind = "toolsdb"            # toolsdb (ToolsDB на Toolforge, креды из envvars) | sqlite (только локально)
+sqlite_path = "apparitor.db"
 
 [admit]
 min_edits = 0        # по readme критерий = наличие учётки и не заблокирован
