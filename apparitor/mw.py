@@ -43,13 +43,6 @@ class Client:
                     await asyncio.sleep(_retry_after(r.headers.get("Retry-After"), 2**attempt))
         raise RuntimeError(f"{self.api_url}: 429 после {ATTEMPTS} попыток")
 
-
-def _retry_after(header: str | None, default: float) -> float:
-    try:
-        return min(float(header), 30.0) if header else default
-    except ValueError:
-        return default
-
     async def raw_page(self, title: str) -> str | None:
         """Текст последней версии страницы (для JSON-страниц гаджетов); None — страницы нет."""
         d = await self.get(action="query", prop="revisions", rvprop="content", rvslots="main", titles=title)
@@ -57,3 +50,10 @@ def _retry_after(header: str | None, default: float) -> float:
         if "missing" in page:
             return None
         return page["revisions"][0]["slots"]["main"]["content"]
+
+
+def _retry_after(header: str | None, default: float) -> float:
+    try:
+        return min(float(header), 30.0) if header else default
+    except ValueError:
+        return default

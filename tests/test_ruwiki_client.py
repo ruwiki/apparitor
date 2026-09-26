@@ -73,3 +73,53 @@ def test_retry_after(hdr, exp):
     from apparitor.mw import _retry_after
 
     assert _retry_after(hdr, 2.0) == exp
+
+
+class FakeResp:
+    def __init__(self, status, body, headers=None):
+        self.status, self._body, self.headers = status, body, headers or {}
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *a):
+        return False
+
+    def raise_for_status(self):
+        pass
+
+    async def json(self):
+        return self._body
+
+
+class FakeSession:
+    closed = False
+
+    def __init__(self, responses):
+        self.responses, self.calls = list(responses), []
+
+    def get(self, url, params=None, headers=None):
+        self.calls.append(params)
+        return self.responses.pop(0)
+
+
+async def test_client_raw_page_and_429(monkeypatch):
+    from apparitor import mw
+
+    slept = []
+
+    async def fake_sleep(t):
+        slept.append(t)
+
+    monkeypatch.setattr(mw.asyncio, "sleep", fake_sleep)
+    page = {"query": {"pages": [{"revisions": [{"slots": {"main": {"content": "{}"}}}]}]}}
+    s = FakeSession([FakeResp(429, {}, {"Retry-After": "3"}), FakeResp(200, page)])
+    c = mw.Client("https://x/api.php", session=s)
+    assert await c.raw_page("MediaWiki:Gadget-markadmins.json") == "{}"
+    assert slept == [3.0] and s.calls[0]["titles"] == "MediaWiki:Gadget-markadmins.json"
+    s = FakeSession([FakeResp(200, {"query": {"pages": [{"missing": True}]}})])
+    assert await mw.Client("https://x/api.php", session=s).raw_page("Нет") is None
+    s = FakeSession([FakeResp(429, {})] * 4)
+    with pytest.raises(RuntimeError):
+        await mw.Client("https://x/api.php", session=s).get(action="query")
+    assert len(slept) == 4, "после последней попытки не спим"
