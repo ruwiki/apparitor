@@ -47,12 +47,21 @@ class Apparitor(discord.Client):
         return discord.utils.get(guild.roles, name=name)
 
     def wanted_roles(self, info: dict) -> list[str]:
-        """Имена ролей по условиям; пустая строка в конфиге = условие не используется."""
+        """Имена ролей: admitted всем прошедшим, apat по условию, остальные ключи = группы рувики.
+        Пустая строка в конфиге = не использовать."""
         r = self.cfg["roles"]
-        cond = {"admitted": True, "sysop": info["sysop"], "apat": info["apat"],
-                "arbcom": "arbcom" in info["groups"], "checkuser": "checkuser" in info["groups"],
-                "bureaucrat": "bureaucrat" in info["groups"]}
-        return [r[k] for k, ok in cond.items() if ok and r.get(k)]
+        out = [r["admitted"]] if r.get("admitted") else []
+        if info["apat"] and r.get("apat"):
+            out.append(r["apat"])
+        out += [v for k, v in r.items() if k not in ("admitted", "apat") and v and k in info["groups"]]
+        return out
+
+    async def report(self, text: str) -> None:
+        """Строка в служебный канал (#moderbot). В холостом режиме — единственный выход."""
+        cid = self.cfg.get("report_channel_id") or 0
+        ch = self.get_channel(cid) if cid else None
+        if ch:
+            await ch.send(text[:1900])
 
     def admissible(self, info: dict) -> tuple[bool, str]:
         a = self.cfg["admit"]
@@ -69,18 +78,25 @@ class Apparitor(discord.Client):
 
     async def apply_roles(self, member: discord.Member, info: dict) -> tuple[list[str], list[str]]:
         """Выдаёт нужные, снимает ненужные из управляемого набора. Возвращает (added, removed, missing)."""
-        managed = {v for v in self.cfg["roles"].values() if v}
+        managed = {v for v in self.cfg["roles"].values() if v} | set(self.cfg.get("remove_on_confirm", []))
         want = set(self.wanted_roles(info))
         have = {r.name for r in member.roles}
         add = [self.role_by_name(member.guild, n) for n in want - have]
         rem = [r for r in member.roles if r.name in (managed - want)]
         missing = [n for n, r in zip(want - have, add) if r is None]
         add = [r for r in add if r is not None]
-        if add:
-            await member.add_roles(*add, reason=f"Apparitor: {info['name']} {info['labels']}")
-        if rem:
-            await member.remove_roles(*rem, reason="Apparitor: sync")
-        self.store.log(str(member.id), "roles", info["name"], f"+{[r.name for r in add]} -{[r.name for r in rem]}")
+        dry = self.cfg.get("dry_run", True)
+        tag = "[холостой] " if dry else ""
+        await self.report(f"{tag}{member.mention} ↔ **{info['name']}** ({', '.join(info['labels']) or 'без флагов'}): "
+                          f"выдать {[r.name for r in add] or '—'}, снять {[r.name for r in rem] or '—'}"
+                          + (f", нет ролей {missing}" if missing else ""))
+        if not dry:
+            if add:
+                await member.add_roles(*add, reason=f"Apparitor: {info['name']} {info['labels']}")
+            if rem:
+                await member.remove_roles(*rem, reason="Apparitor: sync")
+        self.store.log(str(member.id), "roles-dry" if dry else "roles", info["name"],
+                       f"+{[r.name for r in add]} -{[r.name for r in rem]}")
         return [r.name for r in add], [r.name for r in rem], missing
 
 
@@ -97,6 +113,7 @@ def register(bot: Apparitor):
     @tree.command(name="verify", description="Привязать вики-аккаунт рувики: получить код для правки")
     @app_commands.describe(wiki_name="Имя участника в рувики")
     async def verify(inter: discord.Interaction, wiki_name: str):
+        await bot.report(f"/verify от {inter.user.mention}: «{wiki_name}»")
         info = await wiki.user_info(bot.http_session, wiki_name)
         if not info:
             await inter.response.send_message(f"В рувики нет участника «{wiki_name}».", ephemeral=True)
@@ -119,6 +136,7 @@ def register(bot: Apparitor):
             return
         await inter.response.defer(ephemeral=True)
         revid = await wiki.find_code_in_contribs(bot.http_session, p["wiki_name"], p["code"], p["issued_at"])
+        await bot.report(f"/confirm от {inter.user.mention}: {p['wiki_name']}, правка с кодом: {revid or 'не найдена'}")
         if not revid:
             await inter.followup.send(f"Правки с описанием `{p['code']}` от {p['wiki_name']} не вижу. "
                                       f"Подождите минуту после сохранения и повторите.", ephemeral=True)
@@ -128,11 +146,12 @@ def register(bot: Apparitor):
         ok, why = bot.admissible(info)
         if not ok:
             bot.store.log(str(inter.user.id), "reject", info["name"], why)
+            await bot.report(f"впуск {inter.user.mention} ↔ {info['name']}: отказ — {why}")
             await inter.followup.send(f"Аккаунт подтверждён (revid {revid}), но критерии впуска не пройдены: {why}.",
                                       ephemeral=True)
             return
         added, removed, missing = await bot.apply_roles(inter.user, info)
-        msg = f"Подтверждено (revid {revid}). {fmt(info)}\nВыданы роли: {added or '—'}"
+        msg = f"Подтверждено (revid {revid}). {fmt(info)}\n" + ("Холостой режим: роли не менялись, отчёт в служебном канале." if bot.cfg.get("dry_run", True) else f"Выданы роли: {added or '—'}")
         if missing:
             msg += f"\n⚠️ На сервере нет ролей: {missing}"
         await inter.followup.send(msg, ephemeral=True)
@@ -141,6 +160,7 @@ def register(bot: Apparitor):
     @app_commands.describe(wiki_name="Имя в рувики; пусто = свой привязанный аккаунт")
     async def status(inter: discord.Interaction, wiki_name: str | None = None):
         name = wiki_name or bot.store.wiki_of(inter.user.id)
+        await bot.report(f"/status от {inter.user.mention}: «{name}»")
         if not name:
             await inter.response.send_message("Аккаунт не привязан: `/verify <имя>`.", ephemeral=True)
             return

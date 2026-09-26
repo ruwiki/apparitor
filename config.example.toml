@@ -1,5 +1,8 @@
 # Скопировать в config.toml. Токен бота — в .env (DISCORD_TOKEN=...), не сюда.
 db = "apparitor.db"
+report_channel_id = 0         # служебный канал для отчётов о действиях
+dry_run = true                # true = только отчёты, ролей не трогать
+remove_on_confirm = []        # роли, снимаемые после подтверждения (напр. "🆕 new user")
 guild_id = 0                 # сервер для отладки; 0 = команды глобальные (появляются до часа)
 log_channel_id = 0           # служебный канал для отчётов; 0 = не писать
 
@@ -11,6 +14,10 @@ reject_blocked = true
 
 # Имя роли Discord <- условие; "" = не использовать. Роли должны стоять НИЖЕ роли бота.
 [roles]
+interface-admin = ""
+engineer = ""
+closer = ""
+steward = ""
 admitted = "участник"        # всем прошедшим проверку
 sysop = "админ"
 apat = "АПАТ"
