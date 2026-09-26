@@ -46,19 +46,22 @@ async def callback(req: web.Request) -> web.Response:
         async with s.post(f"{META}/access_token", data={
                 "grant_type": "authorization_code", "code": code,
                 "client_id": os.environ["OAUTH_CLIENT_ID"], "client_secret": os.environ["OAUTH_CLIENT_SECRET"]}) as r:
-            tok = await r.json()
-            if "access_token" not in tok:
-                return web.Response(status=502, text=f"Мета не выдала токен: {tok.get('message', tok)}")
+            tok = await r.json(content_type=None) if r.content_type.endswith("json") else {}
+            if r.status != 200 or "access_token" not in tok:
+                return web.Response(status=502, text=f"Мета не выдала токен (HTTP {r.status}): {tok.get('message', '')}")
         async with s.get(f"{META}/resource/profile", headers={"Authorization": f"Bearer {tok['access_token']}"}) as r:
-            prof = await r.json()
+            if r.status != 200:
+                return web.Response(status=502, text=f"Мета не отдала профиль (HTTP {r.status}).")
+            prof = await r.json(content_type=None)
+    if not prof.get("username"):
+        return web.Response(status=502, text="В профиле нет имени участника.")
     # токен дальше не нужен и не хранится; из профиля берём только имя и глобальный id
     username, sub = prof["username"], str(prof.get("sub", ""))
     bot.store.link(p["discord_id"], username, "oauth", sub)
     bot.store.log(str(p["discord_id"]), "oauth-ok", username, sub)
-    added, removed, why = await bot.after_link(p["discord_id"], username)
-    body = f"Готово: Discord-аккаунт привязан к участнику {username}.\n"
-    body += why or f"Роли: выдать {added or '—'}, снять {removed or '—'}."
-    return web.Response(text=body + "\nМожно закрыть вкладку и вернуться в Discord.")
+    text = await bot.after_link(p["discord_id"], username)
+    return web.Response(text=f"Готово: Discord-аккаунт привязан к участнику {username}.\n{text}\n"
+                             "Можно закрыть вкладку и вернуться в Discord.")
 
 
 def new_state() -> str:

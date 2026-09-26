@@ -24,4 +24,4 @@ Discord-бот доступов для серверов сообщества р�
 Локально: `cp config.example.toml config.toml`, `.env` с `DISCORD_TOKEN`, `OAUTH_CLIENT_ID`,
 `OAUTH_CLIENT_SECRET`; зависимости `pip install --target vendor -r requirements.txt`; `./run.sh`.
 Toolforge: build service из этого репо (`Procfile`), секреты через `toolforge envvars`,
-конфиг `config.toolforge.toml`.
+конфиг `config.toolforge.toml` (путь задаётся envvar `APPARITOR_CONFIG`).
