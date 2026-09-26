@@ -141,7 +141,7 @@ class Apparitor(discord.Client):
         Вызывается из /confirm, OAuth-колбэка и /sync. Возвращает текст для человека."""
         gid = member.guild.id
         if not info:
-            await self.report(gid, f"{member.mention} ↔ {wiki_name}: в рувики нет такого участника")
+            await self.report(gid, f"{member.mention}: в рувики нет такого участника" + (f" ({wiki_name})" if self.gcfg(gid).get("report_names") else ""))
             return f"В рувики нет участника {wiki_name}."
         ok, why = self.admissible(info)
         want = set(self.wanted_roles(gid, info)) if ok else set()
@@ -164,9 +164,13 @@ class Apparitor(discord.Client):
         rem = [r for r in member.roles if r.name in (self.managed_roles(member.guild.id) - want)]
         dry = self.cfg.get("dry_run", True)
         if add or rem or reason or dry:   # вхолостую отчитываемся всегда, иначе тест не виден
-            await self.report(member.guild.id, f"{'[холостой] ' if dry else ''}{member.mention} ↔ **{info['name']}** "
-                              f"({', '.join(info['labels']) or 'без флагов'}"
-                              f"{'; отказ: ' + reason if reason else ''}): "
+            gc = self.gcfg(member.guild.id)
+            if gc.get("report_names", False):   # только в закрытый канал: связка ник ↔ вики-аккаунт
+                who = f"{member.mention} ↔ **{info['name']}** ({', '.join(info['labels']) or 'без флагов'})"
+            else:                                # публичный канал: без имени в вики и без флагов
+                who = f"{member.mention}: вики-аккаунт подтверждён"
+            await self.report(member.guild.id, f"{'[холостой] ' if dry else ''}{who}"
+                              f"{'; отказ: ' + reason if reason else ''}: "
                               f"выдать {[r.name for r in add] or '—'}, снять {[r.name for r in rem] or '—'}"
                               + (f", нет ролей {missing}" if missing else ""))
         if not dry:
@@ -216,7 +220,7 @@ def register(bot: Apparitor):
     async def verify(inter: discord.Interaction, wiki_name: str):
         await inter.response.defer(ephemeral=True)
         info = await wiki.user_info(bot.http_session, wiki_name)
-        await bot.report(inter.guild_id, f"/verify от {inter.user.mention}: «{wiki_name}» — {'есть' if info else 'нет такого'}")
+        await bot.report(inter.guild_id, f"/verify от {inter.user.mention}: " + (f"«{wiki_name}» — {'есть' if info else 'нет такого'}" if bot.gcfg(inter.guild_id).get("report_names") else "запрошен код"))
         if not info:
             await inter.followup.send(f"В рувики нет участника «{wiki_name}».", ephemeral=True)
             return
@@ -238,7 +242,7 @@ def register(bot: Apparitor):
             return
         await inter.response.defer(ephemeral=True)
         revid = await wiki.find_code_in_contribs(bot.http_session, p["wiki_name"], p["code"], p["issued_at"])
-        await bot.report(inter.guild_id, f"/confirm от {inter.user.mention}: {p['wiki_name']}, правка с кодом: {revid or 'не найдена'}")
+        await bot.report(inter.guild_id, f"/confirm от {inter.user.mention}: " + (f"{p['wiki_name']}, " if bot.gcfg(inter.guild_id).get("report_names") else "") + f"правка с кодом: {revid or 'не найдена'}")
         if not revid:
             await inter.followup.send(f"Правки с описанием `{p['code']}` от {p['wiki_name']} не вижу. "
                                       f"Подождите минуту после сохранения и повторите.", ephemeral=True)
@@ -258,7 +262,7 @@ def register(bot: Apparitor):
             return
         await inter.response.defer(ephemeral=True)
         info = await wiki.user_info(bot.http_session, name)
-        await bot.report(inter.guild_id, f"/status от {inter.user.mention}: «{name}»")
+        await bot.report(inter.guild_id, f"/status от {inter.user.mention}" + (f": «{name}»" if bot.gcfg(inter.guild_id).get("report_names") else ""))
         await inter.followup.send(fmt(info) if info else f"Нет участника «{name}».", ephemeral=True)
 
     @tree.command(name="sync", description="Пересчитать роли всем привязанным (только Manage Roles)")

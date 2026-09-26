@@ -14,7 +14,8 @@ reject_blocked = true
 
 # --- Сообщество Викимедиа ---
 [guild.223183550965481473]
-report_channel_id = 995099313648701600   # #moderbot
+report_channel_id = 995099313648701600   # #moderbot — только модераторы
+report_names = true                       # закрытый канал: в отчёте связка ник ↔ вики-аккаунт
 remove_on_confirm = ["🆕 new user"]
 [guild.223183550965481473.roles]         # admitted/apat — условия; остальные ключи = группы рувики
 admitted = "✔"
@@ -28,7 +29,8 @@ steward = "Стюард"
 
 # --- Русская Википедия ---
 [guild.1044474820089368666]
-report_channel_id = 1212507148982947901   # #боты
+report_channel_id = 1212507148982947901   # #боты — публичный
+report_names = false                      # без имени в вики и флагов; сменить на закрытый канал
 [guild.1044474820089368666.roles]
 admitted = "аутентифицирован(а)"
 apat = ""
@@ -44,7 +46,8 @@ steward = "Стюард"
 
 # --- Clerks (АК) ---
 [guild.1071563548678959134]
-report_channel_id = 1553431285798543390   # #bot
+report_channel_id = 1553431285798543390   # #bot — виден всему серверу АК
+report_names = false
 [guild.1071563548678959134.roles]
 admitted = ""
 apat = ""
