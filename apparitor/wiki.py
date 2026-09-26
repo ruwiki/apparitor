@@ -37,7 +37,10 @@ LABELS = {
     "clerk": "клерк",
     "techdeleter": "технический удаляющий",
     "vrts": "VRTS",
+    "wmf": "сотрудник WMF",
 }
+# Сотрудники Фонда: глобальные группы wmf-* / staff / sysadmin либо учётка «… (WMF)» (у многих групп нет).
+WMF_GROUPS = {"staff", "sysadmin"}
 # Статусы без технической группы (ПИ+, борцы с вандализмом, клерки, ТУ, VRTS) — из JSON гаджета markadmins,
 # его обновляет MBHbot раз в несколько дней: ключ гаджета -> псевдогруппа. arbcom берём и оттуда:
 # в группе рувики нет арбитров с флагом админа, в JSON — весь действующий состав.
@@ -63,7 +66,7 @@ HIDDEN = {
     "suppressredirect",
     "confirmed",
 }
-GLOBAL_KEEP = {"steward", "global-sysop", "global-interface-editor", "founder", "ombuds"}
+GLOBAL_KEEP = {"steward", "global-sysop", "global-interface-editor", "founder", "ombuds", "wmf"}
 BAD_CHARS = set("|#<>[]{}")
 
 
@@ -121,6 +124,8 @@ def _pack(u: dict, global_groups: list[str], status_groups: set[str] = frozenset
     groups = [g for g in u.get("groups", []) if g not in HIDDEN]
     groups += [g for g in STATUS_GROUPS.values() if g in status_groups and g not in groups]
     groups += [g for g in global_groups if g in GLOBAL_KEEP]
+    if u["name"].endswith(" (WMF)") or any(g in WMF_GROUPS or g.startswith("wmf-") for g in global_groups):
+        groups.append("wmf")
     partial = bool(u.get("blockpartial"))
     return {
         "name": u["name"],
@@ -157,8 +162,11 @@ async def users_info(
         )
         for u in d["query"]["users"]:
             key = asked.get(norm_name(u.get("name", "")), u.get("name", ""))
-            if "missing" in u or "invalid" in u:
+            if "invalid" in u:
                 out[key] = None
+                continue
+            if "missing" in u:  # нет локальной учётки — может быть глобальная (сотрудники Фонда, другие разделы)
+                out[key] = await _global_only(session, u.get("name", ""))
                 continue
             gg, locked = [], False
             if with_global:
@@ -167,6 +175,21 @@ async def users_info(
                 gg, locked = gui.get("groups", []), bool(gui.get("locked"))
             out[key] = _pack(u, gg, st.get(u["name"], set()), locked)
     return out
+
+
+async def _global_only(session: aiohttp.ClientSession, name: str) -> dict | None:
+    """Учётка без локального аккаунта в рувики: данные из CentralAuth. Локальных флагов нет по определению."""
+    g = await _get(session, action="query", meta="globaluserinfo", guiuser=name, guiprop="groups|editcount")
+    gui = g["query"].get("globaluserinfo", {})
+    if "missing" in gui:
+        return None
+    u = {
+        "name": gui["name"],
+        "groups": [],
+        "editcount": gui.get("editcount", 0),
+        "registration": gui.get("registration"),
+    }
+    return _pack(u, gui.get("groups", []), set(), bool(gui.get("locked")))
 
 
 async def user_info(session: aiohttp.ClientSession, name: str) -> dict | None:

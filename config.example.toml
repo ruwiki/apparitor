@@ -25,3 +25,4 @@ arbcom = "арбитр"             # группа рувики + действу
 checkuser = ""
 closer-plus = ""              # статусы без техгруппы, из того же JSON: closer-plus (ПИ+), vandalfighter,
 vandalfighter = ""            # clerk, techdeleter (ТУ), vrts
+wmf = ""                      # сотрудники Фонда (глобальные группы wmf-*/staff или учётка «… (WMF)»)

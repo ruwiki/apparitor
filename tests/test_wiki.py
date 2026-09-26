@@ -35,6 +35,13 @@ def test_partial_block_is_not_block():
     assert i["blocked"] and i["locked"], "глобальный lock = отказ"
 
 
+def test_wmf_staff_by_name_or_global_group():
+    assert "wmf" in wiki._pack({"name": "NForrester (WMF)", "groups": []}, [])["groups"]
+    i = wiki._pack({"name": "Someone", "groups": []}, ["wmf-legal"])
+    assert i["groups"] == ["wmf"] and "сотрудник WMF" in i["labels"]
+    assert "wmf" not in wiki._pack({"name": "Carn", "groups": ["editor"]}, ["abusefilter-helper"])["groups"]
+
+
 def test_norm_name_like_mediawiki():
     assert wiki.norm_name("bezik") == "Bezik"
     assert wiki.norm_name("alex_nb_it") == "Alex nb it"
