@@ -70,7 +70,7 @@ async def callback(req: web.Request) -> web.Response:
     username, sub = prof["username"], str(prof.get("sub", ""))
     await bot.store.link(p["discord_id"], username, "oauth", sub)
     await bot.store.log(str(p["discord_id"]), "oauth-ok", username, sub)
-    text = await bot.after_link(p["discord_id"], username)
+    text = await bot.after_link(p["discord_id"], p["guild_id"], username)
     return web.Response(text=f"Готово: Discord-аккаунт привязан к участнику {username}.\n{text}\n"
                              "Можно закрыть вкладку и вернуться в Discord.")
 

@@ -1,30 +1,24 @@
-# Скопировать в config.toml. Токен бота — в .env (DISCORD_TOKEN=...), не сюда.
+# Скопировать в config.toml. Секреты — в .env (DISCORD_TOKEN, OAUTH_CLIENT_ID, OAUTH_CLIENT_SECRET), не сюда.
 base_url = ""                 # https://apparitor.toolforge.org — для ссылок /auth
 repo_url = ""
-report_channel_id = 0         # служебный канал для отчётов о действиях
 dry_run = true                # true = только отчёты, ролей не трогать
-remove_on_confirm = []        # роли, снимаемые после подтверждения (напр. "🆕 new user")
-guild_id = 0                 # обязателен: id сервера, на котором работает бот
+guilds = [0]                  # id серверов, на которых работает бот
 
-# Критерии впуска. 0 = не проверять.
 [db]
-kind = "sqlite"            # toolsdb (ToolsDB на Toolforge, креды из envvars) | sqlite (только локально)
+kind = "sqlite"               # toolsdb (ToolsDB на Toolforge, креды из envvars) | sqlite (только локально)
 sqlite_path = "apparitor.db"
 
-[admit]
-min_edits = 100
-min_age_days = 30
+[admit]                       # критерии впуска; 0 = не проверять
+min_edits = 0
+min_age_days = 0
 reject_blocked = true
 
-# Имя роли Discord <- условие; "" = не использовать. Роли должны стоять НИЖЕ роли бота.
-[roles]
-interface-admin = ""
-engineer = ""
-closer = ""
-steward = ""
-admitted = "участник"        # всем прошедшим проверку
-sysop = "админ"
-apat = "АПАТ"
+[guild.0]                     # секция на каждый сервер из guilds
+report_channel_id = 0         # служебный канал для отчётов о действиях
+remove_on_confirm = []        # роли, снимаемые после подтверждения (напр. "🆕 new user")
+[guild.0.roles]               # имя роли <- условие; "" = не использовать; роли должны стоять НИЖЕ роли бота
+admitted = "участник"         # всем прошедшим проверку
+apat = "АПАТ"                 # autoreview ∨ editor ∨ sysop
+sysop = "админ"               # дальше ключи = группы рувики (+ глобальные: steward)
 arbcom = "арбитр"
-checkuser = "ЧЮ"
-bureaucrat = ""
+checkuser = ""

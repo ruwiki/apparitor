@@ -19,7 +19,7 @@ TS_FMT = "%Y-%m-%dT%H:%M:%SZ"
 SCHEMA = {
     "links": """(discord_id bigint primary key, wiki_name varchar(255) not null,
                  verified_at varchar(20) not null, method varchar(32) not null, evidence varchar(255))""",
-    "pending": """(discord_id bigint primary key, wiki_name varchar(255) not null,
+    "pending": """(discord_id bigint primary key, guild_id bigint not null, wiki_name varchar(255) not null,
                    code varchar(64) not null, issued_at varchar(20) not null)""",
     "log": """(id integer primary key {autoinc}, ts varchar(20), actor varchar(32), action varchar(32),
                target varchar(255), detail text)""",
@@ -134,20 +134,20 @@ class Store:
             log.error("health: %s", e)
             return False
 
-    async def set_pending(self, discord_id: int, wiki_name: str, code: str) -> None:
-        await self._run(self._exec, self._upsert_sql("pending", "discord_id, wiki_name, code, issued_at", 4),
-                        (discord_id, wiki_name, code, now_ts()))
+    async def set_pending(self, discord_id: int, guild_id: int, wiki_name: str, code: str) -> None:
+        await self._run(self._exec, self._upsert_sql("pending", "discord_id, guild_id, wiki_name, code, issued_at", 5),
+                        (discord_id, guild_id, wiki_name, code, now_ts()))
 
     async def get_pending(self, discord_id: int):
-        r = await self._run(lambda: self._exec("select wiki_name, code, issued_at from pending where discord_id=?",
-                                               (discord_id,)).fetchone())
-        return r and {"wiki_name": r[0], "code": r[1], "issued_at": parse_ts(r[2])}
+        r = await self._run(lambda: self._exec(
+            "select guild_id, wiki_name, code, issued_at from pending where discord_id=?", (discord_id,)).fetchone())
+        return r and {"guild_id": int(r[0]), "wiki_name": r[1], "code": r[2], "issued_at": parse_ts(r[3])}
 
     async def pending_by_state(self, state: str):
         """Для OAuth: state хранится в поле code, wiki_name пустое."""
-        r = await self._run(lambda: self._exec("select discord_id, issued_at from pending where code=?",
-                                               (state,)).fetchone())
-        return r and {"discord_id": int(r[0]), "issued_at": parse_ts(r[1])}
+        r = await self._run(lambda: self._exec(
+            "select discord_id, guild_id, issued_at from pending where code=?", (state,)).fetchone())
+        return r and {"discord_id": int(r[0]), "guild_id": int(r[1]), "issued_at": parse_ts(r[2])}
 
     async def link(self, discord_id: int, wiki_name: str, method: str, evidence: str) -> None:
         """Связка и снятие ожидания — одной транзакцией."""

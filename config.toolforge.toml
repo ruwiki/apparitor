@@ -1,21 +1,22 @@
+# Конфиг для Toolforge (путь в envvar APPARITOR_CONFIG). Секретов здесь нет.
 base_url = "https://apparitor.toolforge.org"
 repo_url = "https://github.com/ruwiki/apparitor"
-guild_id = 223183550965481473        # Сообщество Викимедиа
-report_channel_id = 995099313648701600   # #moderbot
 dry_run = true                       # только отчёты, ролей не трогать
-remove_on_confirm = ["🆕 new user"]
+guilds = [223183550965481473, 1044474820089368666]
 
 [db]
-kind = "toolsdb"            # toolsdb (ToolsDB на Toolforge, креды из envvars) | sqlite (только локально)
-sqlite_path = "apparitor.db"
+kind = "toolsdb"
 
 [admit]
-min_edits = 0        # по readme критерий = наличие учётки и не заблокирован
+min_edits = 0        # 0 = не проверять; по readme сообщества критерий = учётка есть и не заблокирована
 min_age_days = 0
 reject_blocked = true
 
-# admitted/apat — условия; остальные ключи = группы рувики → роль по readme
-[roles]
+# --- Сообщество Викимедиа ---
+[guild.223183550965481473]
+report_channel_id = 995099313648701600   # #moderbot
+remove_on_confirm = ["🆕 new user"]
+[guild.223183550965481473.roles]         # admitted/apat — условия; остальные ключи = группы рувики
 admitted = "✔"
 apat = ""
 sysop = "Администратор"
@@ -24,3 +25,9 @@ interface-admin = "Администратор интерфейса"
 engineer = "Инженер"
 closer = "Подводящий итоги"
 steward = "Стюард"
+
+# --- Русская Википедия ---
+[guild.1044474820089368666]
+report_channel_id = 0                    # заполнить после добавления бота
+[guild.1044474820089368666.roles]
+admitted = ""
