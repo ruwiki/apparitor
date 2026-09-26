@@ -42,9 +42,25 @@ class Apparitor(discord.Client):
         self.http_session = aiohttp.ClientSession()
         register(self)
         for gid in self.cfg["guilds"]:
-            g = discord.Object(id=gid)
-            self.tree.copy_global_to(guild=g)
+            await self.sync_guild(gid)
+
+    async def sync_guild(self, gid: int) -> bool:
+        """Команды на сервер; бота там может ещё не быть — тогда предупреждение, не падение."""
+        g = discord.Object(id=gid)
+        self.tree.copy_global_to(guild=g)
+        try:
             await self.tree.sync(guild=g)
+            return True
+        except discord.Forbidden:
+            log.warning("сервер %s: нет доступа (бот ещё не добавлен?) — команды не синхронизированы", gid)
+            return False
+
+    async def on_guild_join(self, guild: discord.Guild):
+        if guild.id in self.cfg["guilds"]:
+            ok = await self.sync_guild(guild.id)
+            log.info("добавлен на %s (%s): команды %s", guild.name, guild.id, "готовы" if ok else "не синхронизированы")
+        else:
+            log.warning("добавлен на сервер вне конфига: %s (%s) — команд там нет", guild.name, guild.id)
 
     async def close(self):
         if self.http_session:
