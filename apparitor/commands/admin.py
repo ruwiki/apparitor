@@ -33,6 +33,24 @@ def register(bot: Apparitor) -> None:
             "\n".join(lines)[:1900] or f"Изменений нет (привязанных на сервере: {len(here)}).", ephemeral=True
         )
 
+    @tree.command(name="link", description="Привязать участника к учётке рувики вручную (только Manage Roles)")
+    @app_commands.guild_only()
+    @app_commands.checks.has_permissions(manage_roles=True)
+    @app_commands.describe(member="Участник Discord", wiki_name="Имя в рувики (или глобальная учётка)")
+    async def link(inter: discord.Interaction, member: discord.Member, wiki_name: str):
+        """Связка, подтверждённая человеком с правом Manage Roles: для тех, у кого ник никогда не совпадёт
+        (Grapefruit = Ле Лой). Кто привязал — в evidence и журнале."""
+        await inter.response.defer(ephemeral=True)
+        info = await bot.wiki.user_info(wiki_name)
+        if not info:
+            await inter.followup.send(f"В рувики и CentralAuth нет участника «{wiki_name}».", ephemeral=True)
+            return
+        await bot.store.link(member.id, info.name, "manual", f"{inter.user.name} ({inter.user.id})")
+        await bot.store.log(str(inter.user.id), "link-manual", info.name, f"discord {member.id} ({member.name})")
+        await bot.report(inter.guild_id, f"/link от {inter.user.mention}: {member.mention} ↔ **{info.name}**")
+        text = await bot.evaluate(member, info, info.name)
+        await inter.followup.send(f"{member.mention} ↔ **{info.name}** ({info.labels_text}). {text}", ephemeral=True)
+
     @tree.command(name="audit", description="Сопоставить всех участников сервера с рувики (только Manage Roles)")
     @app_commands.guild_only()
     @app_commands.checks.has_permissions(manage_roles=True)

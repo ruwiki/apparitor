@@ -52,4 +52,12 @@ def test_decide_reject_strips_managed(cfg):
 
 
 def test_commands_registered(bot):
-    assert sorted(c.name for c in bot.tree.get_commands()) == ["audit", "auth", "confirm", "status", "sync", "verify"]
+    assert sorted(c.name for c in bot.tree.get_commands()) == [
+        "audit",
+        "auth",
+        "confirm",
+        "link",
+        "status",
+        "sync",
+        "verify",
+    ]
