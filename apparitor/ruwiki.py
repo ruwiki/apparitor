@@ -155,7 +155,7 @@ class RuWiki:
         """Пакетно (до 50 имён): имя как спросили -> UserInfo | None (ответ приходит с нормализованным именем).
         with_global — глобальные группы и lock отдельным запросом на имя (дорого; только где могут повлиять).
         global_fallback — имя без локальной учётки искать в CentralAuth: только для точного имени
-        (/auth, /status); по нику это ловит чужие пустые учётки других разделов."""
+        (/login, /status); по нику это ловит чужие пустые учётки других разделов."""
         out: dict[str, UserInfo | None] = {}
         names = list(dict.fromkeys(n for n in names if valid_name(n)))
         st = await self.statuses() if names else {}

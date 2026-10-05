@@ -46,11 +46,11 @@ async def healthz(req: web.Request) -> web.Response:
 
 
 async def start(req: web.Request) -> web.Response:
-    """Ссылка из /auth: state уже выдан боту, переадресуем на Мету."""
+    """Ссылка из /login: state уже выдан боту, переадресуем на Мету."""
     bot = req.app[BOT]
     state = req.query.get("s", "")
     if not state or not await bot.store.pending_by_state(state):
-        return web.Response(status=400, text="Неизвестная или устаревшая ссылка. Повторите /auth в Discord.")
+        return web.Response(status=400, text="Неизвестная или устаревшая ссылка. Повторите /login в Discord.")
     url = f"{META}/authorize?response_type=code&client_id={os.environ['OAUTH_CLIENT_ID']}&state={state}"
     raise web.HTTPFound(url)
 
@@ -60,9 +60,9 @@ async def callback(req: web.Request) -> web.Response:
     code, state = req.query.get("code"), req.query.get("state", "")
     p = await bot.store.pending_by_state(state)
     if not code or not p:
-        return web.Response(status=400, text="Нет кода или state. Повторите /auth в Discord.")
+        return web.Response(status=400, text="Нет кода или state. Повторите /login в Discord.")
     if dt.datetime.now(dt.UTC) - p["issued_at"] > dt.timedelta(minutes=30):
-        return web.Response(status=400, text="Ссылка устарела (30 минут). Повторите /auth.")
+        return web.Response(status=400, text="Ссылка устарела (30 минут). Повторите /login.")
     async with ClientSession() as s:
         async with s.post(
             f"{META}/access_token",

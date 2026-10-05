@@ -1,5 +1,5 @@
 # Скопировать в config.toml. Секреты — в .env (DISCORD_TOKEN, OAUTH_CLIENT_ID, OAUTH_CLIENT_SECRET), не сюда.
-base_url = ""                 # https://apparitor.toolforge.org — для ссылок /auth
+base_url = ""                 # https://apparitor.toolforge.org — для ссылок /login
 repo_url = ""
 dry_run = true                # true = только отчёты, ролей не трогать
 guilds = [0]                  # id серверов, на которых работает бот

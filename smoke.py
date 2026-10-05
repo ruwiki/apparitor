@@ -17,6 +17,6 @@ cfg.db = {"kind": "sqlite", "sqlite_path": ":memory:"}
 bot = Apparitor(cfg)
 register(bot)
 names = sorted(c.name for c in bot.tree.get_commands())
-assert names == ["audit", "auth", "confirm", "link", "status", "sync", "verify"], names
+assert names == ["audit", "confirm", "link", "login", "status", "sync", "verify"], names
 asyncio.run(Store(cfg.db).health())
 print("smoke ok:", names)

@@ -1,4 +1,4 @@
-"""/auth, /verify, /confirm, /status — привязка Discord ↔ вики-аккаунт и справка о флагах."""
+"""/login, /verify, /confirm, /status — привязка Discord ↔ вики-аккаунт и справка о флагах."""
 
 from __future__ import annotations
 
@@ -31,9 +31,9 @@ def register(bot: Apparitor) -> None:
     def names_ok(gid: int) -> bool:
         return bot.gcfg(gid).report_names
 
-    @tree.command(name="auth", description="Подтвердить вики-аккаунт входом через Мету (OAuth)")
+    @tree.command(name="login", description="Подтвердить вики-аккаунт входом через Мету (OAuth)")
     @app_commands.guild_only()
-    async def auth(inter: discord.Interaction):
+    async def login(inter: discord.Interaction):
         base = bot.cfg.base_url
         if not base or not os.environ.get("OAUTH_CLIENT_ID"):
             await inter.response.send_message("OAuth ещё не настроен, используйте `/verify <имя>`.", ephemeral=True)
@@ -43,7 +43,7 @@ def register(bot: Apparitor) -> None:
         await inter.response.send_message(
             f"Войдите своей учёткой Викимедиа по ссылке (30 минут): <{base}/oauth/start?s={state}>", ephemeral=True
         )
-        await bot.report(inter.guild_id, f"/auth от {inter.user.mention}")
+        await bot.report(inter.guild_id, f"/login от {inter.user.mention}")
 
     @tree.command(name="verify", description="Привязать вики-аккаунт рувики без OAuth: код в описании правки")
     @app_commands.guild_only()
@@ -100,7 +100,7 @@ def register(bot: Apparitor) -> None:
     async def status(inter: discord.Interaction, wiki_name: str | None = None):
         name = wiki_name or await bot.store.wiki_of(inter.user.id)
         if not name:
-            await inter.response.send_message("Аккаунт не привязан: `/auth` или `/verify <имя>`.", ephemeral=True)
+            await inter.response.send_message("Аккаунт не привязан: `/login` или `/verify <имя>`.", ephemeral=True)
             return
         await inter.response.defer(ephemeral=True)
         info = await bot.wiki.user_info(name)
