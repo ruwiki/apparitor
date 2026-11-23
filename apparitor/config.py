@@ -70,8 +70,9 @@ class GuildCfg:
     board_channel_id: int = 0  # доска лучших сообщений (замена Starboard); 0 = нет
     board_emoji: str = "⭐"
     board_threshold: int = 7  # сколько звёзд нужно для публикации (по данным доски Starboard: минимум 7)
-    board_sources: list[int] = field(default_factory=list)  # откуда берём: каналы…
-    board_categories: list[int] = field(default_factory=list)  # …и категории; только открытые
+    board_sources: list[int] = field(default_factory=list)  # каналы, которые берём всегда (решение людей)
+    board_categories: list[int] = field(default_factory=list)  # остальные — только из этих категорий (пусто = любые)
+    board_open_role: str = "all"  # …и только те, что видит эта роль (по имени): категория не равна открытости
     board_self_star: bool = False  # считать ли звезду автора
     reaction_require: dict[str, list[str]] = field(default_factory=dict)  # id сообщения -> роли, одна из которых нужна
 
