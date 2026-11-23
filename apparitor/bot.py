@@ -233,13 +233,17 @@ class Apparitor(discord.Client):
         missing = [n for n, r in zip(d.add, add, strict=True) if r is None]
         add = [r for r in add if r is not None]
         rem = [r for r in member.roles if r.name in d.remove]
+        # роль выше роли бота выдать нельзя, и один такой вызов сорвал бы выдачу остальных (✔ в том числе)
+        above = [r for r in add + rem if not r.is_assignable()]
+        add, rem = [r for r in add if r.is_assignable()], [r for r in rem if r.is_assignable()]
         reason = "" if d.ok else d.why
-        if not quiet and (add or rem or reason or dry):  # вхолостую отчитываемся всегда, иначе тест не виден
+        if not quiet and (add or rem or above or reason or dry):  # вхолостую отчитываемся всегда, иначе тест не виден
             await self.report(
                 guild.id,
                 f"{'[холостой] ' if dry else ''}{self.describe(guild.id, member, info)}"
                 f"{'; отказ: ' + reason if reason else ''}: выдать {listed(d.add)}, снять {listed(d.remove)}"
-                + (f", нет ролей {listed(missing)}" if missing else ""),
+                + (f", нет ролей {listed(missing)}" if missing else "")
+                + (f"; выше роли бота, не трону: {listed([r.name for r in above])}" if above else ""),
             )
         if not dry:
             if add:
