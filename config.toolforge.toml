@@ -23,7 +23,7 @@ import_links = true                       # связки всех участни
 roles_channel_id = 768773664949927946     # #roles: здесь сообщения бота с реакциями
 optout_channels = [353333123381067777, 778916107893473310]   # #readme, #announcements: строка «− #канал — выйти» в #roles, сообщения в личку
 optout_emoji = {"353333123381067777" = "🚪", "778916107893473310" = "🔕"}   # реакции строк выхода (у Carl не заняты)
-welcome_channel_id = 728220635905523782    # #welcome; после перестройки прав — новый канал
+welcome_channel_id = 1574478408786649158    # #lobby (создан стеной прав 23.11.2026); старый #welcome остаётся Carl и WikiAuthBot2
 welcome_text = '''<:wikipetan:330603892725252096> Добро пожаловать в чат сообщества Викимедиа!
 {mention}, пожалуйста, сообщите ваш никнейм в Википедии.
 
@@ -71,7 +71,7 @@ steward = "Стюард"
 # farewell выключен: Carl пишет прощание в #welcome, а после перестройки прав там новички — ник ушедшего им не показывать.
 # Включить = задать farewell_channel_id (например #moderbot) и features.farewell.
 [guild.223183550965481473.features]
-welcome = "dry"
+welcome = "live"
 join_roles = "dry"
 sticky_roles = "dry"
 reaction_roles = "dry"
