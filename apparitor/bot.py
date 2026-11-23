@@ -83,6 +83,9 @@ class Apparitor(discord.Client):
         """Команды на сервер; бота там может ещё не быть — тогда предупреждение, не падение."""
         g = discord.Object(id=gid)
         self.tree.copy_global_to(guild=g)
+        if allowed := self.gcfg(gid).commands:  # на сервере сообщества /auth уже есть у WikiAuthBot2: дублей не нужно
+            for cmd in [c for c in self.tree.get_commands(guild=g) if c.name not in allowed]:
+                self.tree.remove_command(cmd.name, guild=g)
         try:
             await self.tree.sync(guild=g)
             return True

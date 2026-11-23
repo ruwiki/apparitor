@@ -91,3 +91,20 @@ async def test_live_blocked_member_keeps_every_role_and_moderators_get_a_line(bo
     m.add_roles, m.remove_roles = add_roles, remove_roles
     await bot.evaluate(m, info(groups=["autoreview"]), "X")
     assert ("remove", ["🆕 new user"]) in calls and ("add", ["✔"]) in calls
+
+
+async def test_each_server_gets_its_own_command_list(bot, monkeypatch):
+    """Сообщество: /login, /verify, /confirm дублируют /auth WikiAuthBot2 — не регистрируем; на других серверах все."""
+    seen = {}
+
+    async def fake_sync(*, guild=None):
+        seen[guild.id] = sorted(c.name for c in bot.tree.get_commands(guild=guild))
+
+    monkeypatch.setattr(bot.tree, "sync", fake_sync)
+    for gid in (GUILD, 1044474820089368666, 1071563548678959134):
+        await bot.sync_guild(gid)
+    assert seen[GUILD] == ["audit", "link", "status", "sync"]
+    for gid in (1044474820089368666, 1071563548678959134):
+        assert {"login", "verify", "confirm", "status", "sync", "link", "audit"} <= set(seen[gid])
+    registered = {c.name for c in bot.tree.get_commands()}
+    assert set(bot.gcfg(GUILD).commands) <= registered, "в конфиге нет опечаток в именах команд"

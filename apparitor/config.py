@@ -57,6 +57,7 @@ class GuildCfg:
     roles_channel_id: int = 0  # канал, где бот держит своё сообщение с реакциями
     track_categories: dict[str, str] = field(default_factory=dict)  # id категории -> префикс роли нового канала
     optout_channels: list[int] = field(default_factory=list)  # из них можно выйти реакцией, сообщения — в личку
+    commands: list[str] = field(default_factory=list)  # какие slash-команды регистрировать на сервере; пусто = все
     features: dict[str, str] = field(default_factory=dict)  # функция -> dry | live; нет ключа = выключена
     welcome_channel_id: int = 0  # куда писать приветствие и прощание
     welcome_text: str = ""  # {mention} — упоминание вошедшего
