@@ -106,15 +106,3 @@ def register(bot: Apparitor) -> None:
             )
         await bot.store.log(str(inter.user.id), "audit", str(guild.id), head)
         log.info("audit %s: %s", guild.id, head)
-
-    @tree.command(
-        name="optout-post", description="Сообщение с 📭 — выход из readme и announcements (только Manage Roles)"
-    )
-    @app_commands.guild_only()
-    @app_commands.checks.has_permissions(manage_roles=True)
-    async def optout_post(inter: discord.Interaction):
-        await inter.response.defer(ephemeral=True)
-        if not bot.gcfg(inter.guild_id).optout_channels:
-            await inter.followup.send("На этом сервере выход из каналов не настроен.", ephemeral=True)
-            return
-        await inter.followup.send(await bot.rooms.post_optout(inter.guild), ephemeral=True)

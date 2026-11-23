@@ -84,7 +84,6 @@ def test_commands_registered(bot):
         "confirm",
         "link",
         "login",
-        "optout-post",
         "status",
         "sync",
         "verify",

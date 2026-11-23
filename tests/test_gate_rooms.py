@@ -122,16 +122,18 @@ async def test_reaction_dry_run_only_reports(bot):
 
 async def test_optout_dry_run_only_reports(bot):
     out = capture(bot)
-    await bot.store.add_reaction(GUILD, 124, "📭", "optout", 0)
+    readme = bot.gcfg(GUILD).optout_channels[0]
+    await bot.store.add_reaction(GUILD, 124, "🚪", "optout", readme)
     m = fake_member()
-    p = SimpleNamespace(guild_id=GUILD, user_id=7, message_id=124, emoji="📭", member=m, channel_id=1)
+    p = SimpleNamespace(guild_id=GUILD, user_id=7, message_id=124, emoji="🚪", member=m, channel_id=1)
     await bot.rooms.reaction(p, True)
-    assert "[холостой]" in out[-1] and "📭" in out[-1]
-    assert await bot.store.optouts(GUILD) == []  # и в БД выход не записан
+    assert "[холостой]" in out[-1] and "🚪" in out[-1]
+    assert await bot.store.optouts(GUILD, readme) == []  # и в БД выход не записан
 
 
 async def test_forward_dry_run_does_nothing(bot, monkeypatch):
-    await bot.store.set_optout(GUILD, 7, True)
+    ch = bot.gcfg(GUILD).optout_channels[0]
+    await bot.store.set_optout(GUILD, ch, 7, True)
 
     async def boom(*a, **k):
         raise AssertionError("пересылка в холостом режиме")
@@ -141,7 +143,6 @@ async def test_forward_dry_run_does_nothing(bot, monkeypatch):
 
     monkeypatch.setattr(bot, "member", member)
 
-    ch = bot.gcfg(GUILD).optout_channels[0]
     m = SimpleNamespace(guild=SimpleNamespace(id=GUILD), channel=SimpleNamespace(id=ch), forward=boom)
     await bot.rooms.message(m)
 

@@ -28,8 +28,8 @@ SCHEMA = {
                       source varchar(32) not null, seen_at varchar(20) not null, primary key (guild_id, discord_id))""",
     "reactions": """(guild_id bigint not null, message_id bigint not null, emoji varchar(64) not null,
                      action varchar(16) not null, target bigint not null, primary key (message_id, emoji))""",
-    "optout": """(guild_id bigint not null, discord_id bigint not null, since varchar(20) not null,
-                  primary key (guild_id, discord_id))""",
+    "optout_channel": """(guild_id bigint not null, channel_id bigint not null, discord_id bigint not null,
+                          since varchar(20) not null, primary key (guild_id, channel_id, discord_id))""",
     "sticky_roles": """(guild_id bigint not null, discord_id bigint not null, roles text not null,
                          left_at varchar(20) not null, primary key (guild_id, discord_id))""",
     "board": """(guild_id bigint not null, message_id bigint primary key, line_id bigint not null,
@@ -270,7 +270,7 @@ class Store:
 
     # --- реакции и выход из каналов ------------------------------------------------
     async def add_reaction(self, guild_id: int, message_id: int, emoji: str, action: str, target: int) -> None:
-        """Реакция на сообщении бота -> действие: role (target = id роли) или optout (target = 0)."""
+        """Реакция на сообщении бота -> действие: role (target = id роли) или optout (target = id канала)."""
         await self._run(
             self._exec,
             self._upsert_sql("reactions", "guild_id, message_id, emoji, action, target", 5),
@@ -294,15 +294,20 @@ class Store:
         )
         return [(int(m), e, a, int(t)) for m, e, a, t in rows]
 
-    async def set_optout(self, guild_id: int, discord_id: int, on: bool) -> None:
+    async def set_optout(self, guild_id: int, channel_id: int, discord_id: int, on: bool) -> None:
         if on:
-            sql, params = self._upsert_sql("optout", "guild_id, discord_id, since", 3), (guild_id, discord_id, now_ts())
+            sql = self._upsert_sql("optout_channel", "guild_id, channel_id, discord_id, since", 4)
+            params = (guild_id, channel_id, discord_id, now_ts())
         else:
-            sql, params = "delete from optout where guild_id=? and discord_id=?", (guild_id, discord_id)
+            sql = "delete from optout_channel where guild_id=? and channel_id=? and discord_id=?"
+            params = (guild_id, channel_id, discord_id)
         await self._run(self._exec, sql, params)
 
-    async def optouts(self, guild_id: int) -> list[int]:
+    async def optouts(self, guild_id: int, channel_id: int) -> list[int]:
+        """Кто вышел из этого канала и получает его сообщения в личку."""
         rows = await self._run(
-            lambda: self._exec("select discord_id from optout where guild_id=?", (guild_id,)).fetchall()
+            lambda: self._exec(
+                "select discord_id from optout_channel where guild_id=? and channel_id=?", (guild_id, channel_id)
+            ).fetchall()
         )
         return [int(r[0]) for r in rows]

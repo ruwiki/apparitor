@@ -50,6 +50,15 @@ class Apparitor(discord.Client):
         self._tasks.add(task)
         task.add_done_callback(self._tasks.discard)
 
+    async def on_ready(self):
+        """Кэш серверов готов: строки выхода из readme и announcements — в сообщение бота в канале ролей."""
+        for gid in self.cfg.guilds:
+            if guild := self.get_guild(gid):
+                try:
+                    await self.rooms.ensure_optout(guild)
+                except Exception:
+                    log.exception("строки выхода на сервере %s", gid)
+
     async def close(self):
         await self.wiki.mw.close()
         await self.gate.close()
