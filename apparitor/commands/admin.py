@@ -26,9 +26,9 @@ def register(bot: Apparitor) -> None:
         infos = await bot.wiki.users_info([n for _, n, _ in here])
         lines = []
         for _, name, m in here:
-            text = await bot.evaluate(m, infos.get(name), name)
-            if "выдать —, снять —" not in text:
-                lines.append(f"{name}: {text}")
+            verdict = await bot.evaluate(m, infos.get(name), name)
+            if verdict.notable:
+                lines.append(f"{name}: {verdict.text}")
         await inter.followup.send(
             "\n".join(lines)[:1900] or f"Изменений нет (привязанных на сервере: {len(here)}).", ephemeral=True
         )
@@ -38,8 +38,8 @@ def register(bot: Apparitor) -> None:
     @app_commands.checks.has_permissions(manage_roles=True)
     @app_commands.describe(member="Участник Discord", wiki_name="Имя в рувики (или глобальная учётка)")
     async def link(inter: discord.Interaction, member: discord.Member, wiki_name: str):
-        """Связка, подтверждённая человеком с правом Manage Roles: для тех, у кого ник никогда не совпадёт
-        (Grapefruit = Ле Лой). Кто привязал — в evidence и журнале."""
+        """Связка, подтверждённая человеком с правом Manage Roles: для тех, у кого ник никогда не совпадёт.
+        Кто привязал — в evidence и журнале."""
         await inter.response.defer(ephemeral=True)
         info = await bot.wiki.user_info(wiki_name)
         if not info:
@@ -48,8 +48,10 @@ def register(bot: Apparitor) -> None:
         await bot.store.link(member.id, info.name, "manual", f"{inter.user.name} ({inter.user.id})")
         await bot.store.log(str(inter.user.id), "link-manual", info.name, f"discord {member.id} ({member.name})")
         await bot.report(inter.guild_id, f"/link от {inter.user.mention}: {member.mention} ↔ **{info.name}**")
-        text = await bot.evaluate(member, info, info.name)
-        await inter.followup.send(f"{member.mention} ↔ **{info.name}** ({info.labels_text}). {text}", ephemeral=True)
+        verdict = await bot.evaluate(member, info, info.name)
+        await inter.followup.send(
+            f"{member.mention} ↔ **{info.name}** ({info.labels_text}). {verdict.text}", ephemeral=True
+        )
 
     @tree.command(name="audit", description="Сопоставить всех участников сервера с рувики (только Manage Roles)")
     @app_commands.guild_only()
@@ -92,7 +94,10 @@ def register(bot: Apparitor) -> None:
         if new_cands:
             await bot.store.set_candidates(guild.id, new_cands)
         head, body = audit.build(guild.name, rows)
-        file = lambda: discord.File(io.BytesIO(body.encode()), filename=f"audit-{guild.id}.txt")  # noqa: E731
+
+        def file() -> discord.File:  # на каждую отправку новый: discord.File одноразовый
+            return discord.File(io.BytesIO(body.encode()), filename=f"audit-{guild.id}.txt")
+
         if await bot.report(guild.id, head, file=file()):
             await inter.followup.send(head + "\nПолный отчёт файлом — в служебном канале.", ephemeral=True)
         else:  # канала нет или нет права — файл тому, кто спросил

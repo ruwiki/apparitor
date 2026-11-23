@@ -10,10 +10,8 @@ import discord
 from discord import app_commands
 
 from ..bot import Apparitor
-from ..models import UserInfo
+from ..models import PENDING_TTL, UserInfo
 from ..web import new_state
-
-CODE_TTL = dt.timedelta(minutes=30)
 
 
 def fmt(info: UserInfo) -> str:
@@ -71,7 +69,7 @@ def register(bot: Apparitor) -> None:
         if not p or not p["wiki_name"]:
             await inter.response.send_message("Сначала `/verify <имя>`.", ephemeral=True)
             return
-        if dt.datetime.now(dt.UTC) - p["issued_at"] > CODE_TTL:
+        if dt.datetime.now(dt.UTC) - p["issued_at"] > PENDING_TTL:
             await inter.response.send_message("Код устарел, повторите `/verify`.", ephemeral=True)
             return
         await inter.response.defer(ephemeral=True)
@@ -87,12 +85,13 @@ def register(bot: Apparitor) -> None:
                 ephemeral=True,
             )
             return
-        info = await bot.wiki.user_info(
-            p["wiki_name"]
-        )  # сначала данные, потом связка: упавший API не оставит связку без ролей
+        # сначала данные, потом связка: упавший API не оставит связку без ролей
+        info = await bot.wiki.user_info(p["wiki_name"])
         await bot.store.link(inter.user.id, p["wiki_name"], "edit-summary", revid)
-        text = await bot.evaluate(inter.user, info, p["wiki_name"])
-        await inter.followup.send(f"Подтверждено (revid {revid}). {fmt(info) if info else ''}\n{text}", ephemeral=True)
+        verdict = await bot.evaluate(inter.user, info, p["wiki_name"])
+        await inter.followup.send(
+            f"Подтверждено (revid {revid}). {fmt(info) if info else ''}\n{verdict.text}", ephemeral=True
+        )
 
     @tree.command(name="status", description="Флаги участника рувики (АПАТ, админ и т.д.)")
     @app_commands.guild_only()

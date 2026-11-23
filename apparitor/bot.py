@@ -10,7 +10,7 @@ from discord import app_commands
 
 from . import rules
 from .config import Config, GuildCfg
-from .models import Decision, UserInfo
+from .models import Decision, UserInfo, Verdict, listed
 from .ruwiki import RuWiki
 from .store import Store
 
@@ -113,24 +113,25 @@ class Apparitor(discord.Client):
         return f"{member.mention}: вики-аккаунт подтверждён"
 
     # --- решение по участнику ---------------------------------------------------------
-    async def evaluate(self, member: discord.Member, info: UserInfo | None, wiki_name: str) -> str:
+    async def evaluate(self, member: discord.Member, info: UserInfo | None, wiki_name: str) -> Verdict:
         """Единая точка: критерии впуска → роли (или снятие всех управляемых при отказе).
-        Вызывается из /confirm, OAuth-колбэка и /sync. Возвращает текст для человека."""
+        Вызывается из /confirm, /link, OAuth-колбэка и /sync."""
         gid = member.guild.id
         if not info:
             shown = f" ({wiki_name})" if self.gcfg(gid).report_names else ""
             await self.report(gid, f"{member.mention}: в рувики нет такого участника{shown}")
-            return f"В рувики нет участника {wiki_name}."
+            return Verdict(f"В рувики нет участника {wiki_name}.", notable=True)
         d = rules.decide(self.cfg.admit, self.gcfg(gid), info, {r.name for r in member.roles})
         missing = await self.apply(member, info, d)
         if not d.ok:
             await self.store.log(str(member.id), "reject", info.name, d.why)
-            return f"Критерии впуска не пройдены: {d.why}."
-        if self.dry_run:
-            return "Холостой режим: роли не менялись, отчёт в служебном канале."
-        return f"Роли: выдать {d.add or '—'}, снять {d.remove or '—'}" + (
-            f", на сервере нет {missing}" if missing else ""
+            return Verdict(f"Критерии впуска не пройдены: {d.why}.", notable=True)
+        roles = f"выдать {listed(d.add)}, снять {listed(d.remove)}" + (
+            f", на сервере нет {listed(missing)}" if missing else ""
         )
+        if self.dry_run:
+            return Verdict(f"Холостой режим: роли не менялись (было бы: {roles}); отчёт в служебном канале.", d.changes)
+        return Verdict(f"Роли: {roles}.", d.changes)
 
     async def apply(self, member: discord.Member, info: UserInfo, d: Decision) -> list[str]:
         """Применяет решение (или только отчитывается вхолостую). Возвращает имена ролей, которых нет на сервере."""
@@ -144,12 +145,12 @@ class Apparitor(discord.Client):
             await self.report(
                 guild.id,
                 f"{'[холостой] ' if self.dry_run else ''}{self.describe(guild.id, member, info)}"
-                f"{'; отказ: ' + reason if reason else ''}: выдать {d.add or '—'}, снять {d.remove or '—'}"
-                + (f", нет ролей {missing}" if missing else ""),
+                f"{'; отказ: ' + reason if reason else ''}: выдать {listed(d.add)}, снять {listed(d.remove)}"
+                + (f", нет ролей {listed(missing)}" if missing else ""),
             )
         if not self.dry_run:
             if add:
-                await member.add_roles(*add, reason=f"Apparitor: {info.name} {info.labels}")
+                await member.add_roles(*add, reason=f"Apparitor: {info.name} ({info.labels_text})")
             if rem:
                 await member.remove_roles(*rem, reason=f"Apparitor: {reason or 'sync'}")
         await self.store.log(
@@ -163,4 +164,4 @@ class Apparitor(discord.Client):
         if not m:
             return "Вас нет на сервере Discord, роли выдать некому."
         info = await self.wiki.user_info(wiki_name)
-        return await self.evaluate(m, info, wiki_name)
+        return (await self.evaluate(m, info, wiki_name)).text

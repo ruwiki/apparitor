@@ -9,8 +9,9 @@ import datetime as dt
 import json
 import logging
 import time
+from collections.abc import Collection
 
-from .models import UserInfo
+from .models import TS_FMT, UserInfo
 from .mw import Client
 
 log = logging.getLogger("apparitor.ruwiki")
@@ -95,7 +96,7 @@ def parse_statuses(content: str) -> dict[str, set[str]]:
 
 
 def pack(
-    u: dict, global_groups: list[str] = (), status_groups: set[str] = frozenset(), locked: bool = False
+    u: dict, global_groups: Collection[str] = (), status_groups: Collection[str] = (), locked: bool = False
 ) -> UserInfo:
     """Ответ list=users (+ глобальные группы, статусы, lock) -> UserInfo."""
     groups = [g for g in u.get("groups", []) if g not in HIDDEN]
@@ -223,7 +224,7 @@ class RuWiki:
             ucuser=name,
             uclimit=20,
             ucprop="ids|comment|timestamp",
-            ucend=since.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            ucend=since.strftime(TS_FMT),
         )
         for c in d["query"].get("usercontribs", []):
             if code.lower() in (c.get("comment") or "").lower():

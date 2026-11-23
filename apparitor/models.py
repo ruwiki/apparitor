@@ -6,6 +6,7 @@ import datetime as dt
 from dataclasses import dataclass, field
 
 TS_FMT = "%Y-%m-%dT%H:%M:%SZ"
+PENDING_TTL = dt.timedelta(minutes=30)  # срок жизни кода /verify и ссылки /login
 
 
 def now_ts() -> str:
@@ -14,6 +15,11 @@ def now_ts() -> str:
 
 def parse_ts(s: str) -> dt.datetime:
     return dt.datetime.strptime(s, TS_FMT).replace(tzinfo=dt.UTC)
+
+
+def listed(names: list[str]) -> str:
+    """Перечисление для людей; пустое — прочерк."""
+    return ", ".join(names) or "—"
 
 
 @dataclass
@@ -56,3 +62,12 @@ class Decision:
     @property
     def changes(self) -> bool:
         return bool(self.add or self.remove)
+
+
+@dataclass
+class Verdict:
+    """Итог по участнику для ответа человеку. notable — есть что показать в сводке /sync:
+    изменение ролей, отказ или пропавшая учётка."""
+
+    text: str
+    notable: bool

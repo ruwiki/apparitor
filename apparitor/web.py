@@ -9,6 +9,8 @@ import secrets
 
 from aiohttp import ClientSession, web
 
+from .models import PENDING_TTL
+
 META = "https://meta.wikimedia.org/w/rest.php/oauth2"
 BOT = web.AppKey("bot", object)
 
@@ -61,7 +63,7 @@ async def callback(req: web.Request) -> web.Response:
     p = await bot.store.pending_by_state(state)
     if not code or not p:
         return web.Response(status=400, text="Нет кода или state. Повторите /login в Discord.")
-    if dt.datetime.now(dt.UTC) - p["issued_at"] > dt.timedelta(minutes=30):
+    if dt.datetime.now(dt.UTC) - p["issued_at"] > PENDING_TTL:
         return web.Response(status=400, text="Ссылка устарела (30 минут). Повторите /login.")
     async with ClientSession() as s:
         async with s.post(

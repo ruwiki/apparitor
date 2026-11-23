@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .models import Decision, UserInfo
+from .models import Decision, UserInfo, listed
 
 
 @dataclass
@@ -23,7 +23,7 @@ def line(r: Row) -> str:
     why = f"; отказ: {d.why}" if not d.ok else ""
     return (
         f"{r.who} ↔ {info.name} ({info.labels_text}{why}): "
-        f"роли бота сейчас {r.mine}; бот выдал бы {', '.join(d.add) or '—'}, снял бы {', '.join(d.remove) or '—'}"
+        f"роли бота сейчас {r.mine}; бот выдал бы {listed(d.add)}, снял бы {listed(d.remove)}"
     )
 
 
