@@ -113,7 +113,7 @@ class Gate:
         guild = self.bot.get_guild(gid)
         linked = {d for d, _ in await self.bot.store.all_links()}
         todo = [m for m in guild.members if not m.bot and m.id not in linked]
-        n = {"imported": 0, "no_link": 0, "no_name": 0, "errors": 0}
+        n = {"imported": 0, "no_link": 0, "no_name": 0, "errors": 0, "raced": 0}
         lines = []
         for m in todo:
             try:
@@ -129,13 +129,18 @@ class Gate:
                 n["no_link"] += 1
             elif not name:
                 n["no_name"] += 1
+            elif await self.bot.store.wiki_of(m.id):
+                n["raced"] += (
+                    1  # пока спрашивали WikiAuthBot, человек сам вошёл через /login или его привязали: та связка старше
+                )
             else:
                 await self.bot.store.link(m.id, name, "wikiauthbot", f"central {central}; импорт")
                 n["imported"] += 1
                 lines.append(f"{m.name}\t{name}\t{central}")
         head = (
             f"Импорт связок из WikiAuthBot: без связки в боте было {len(todo)}; импортировано {n['imported']}; "
-            f"в WikiAuthBot связки нет {n['no_link']}; имя по номеру не найдено {n['no_name']}; ошибок {n['errors']}."
+            f"в WikiAuthBot связки нет {n['no_link']}; имя по номеру не найдено {n['no_name']}; ошибок {n['errors']}; "
+            f"связка появилась за время импорта (не тронута) {n['raced']}."
         )
         await self.bot.store.log("gate", "import-links", str(gid), head)
         return head, "\n".join(lines) if self.bot.gcfg(gid).report_names else ""

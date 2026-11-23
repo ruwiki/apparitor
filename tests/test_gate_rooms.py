@@ -258,3 +258,23 @@ async def test_import_scheduling(bot, monkeypatch):
     bot.gate.maybe_import(1044474820089368666)  # import_links на этом сервере не включён
     await asyncio.sleep(0)
     assert runs == [GUILD]
+
+
+async def test_import_does_not_overwrite_link_made_meanwhile(bot, monkeypatch):
+    """Человек вошёл через /login, пока бот спрашивал WikiAuthBot: связка /login старше, импорт её не затирает."""
+    capture(bot)
+
+    async def whois(gid, did):
+        await bot.store.link(2, "Из логина", "oauth", "x")  # /login пришёл посреди импорта
+        return 77
+
+    async def by_id(cid):
+        return "Из WikiAuthBot"
+
+    monkeypatch.setattr(bot.gate.wab, "whois", whois)
+    monkeypatch.setattr(bot.wiki, "name_by_central_id", by_id)
+    bot.gate.pace = 0
+    guild = SimpleNamespace(members=[SimpleNamespace(id=2, name="u2", bot=False)])
+    monkeypatch.setattr(bot, "get_guild", lambda gid: guild)
+    head, _ = await bot.gate.import_links(GUILD)
+    assert await bot.store.wiki_of(2) == "Из логина" and "импортировано 0" in head and "не тронута) 1" in head

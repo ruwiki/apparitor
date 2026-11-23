@@ -345,3 +345,31 @@ async def test_farewell_goes_only_to_configured_channel(jbot):
     jbot.cfg.guild[GUILD].farewell_channel_id = 0  # никуда
     await jbot.joins.left(make_member(make_guild(chan=chan)))
     assert chan.sent == [] and out == []
+
+
+async def test_parity_explains_false_mismatches(jbot):
+    """Расхождение, которое не ошибка бота, получает причину: реакцию сняли до сверки; роль была и до реакции."""
+    out = capture(jbot)
+    server = json.loads((FIX / "server_roles.json").read_text(encoding="utf-8"))
+    roles = [EVERYONE, OK] + [
+        role(int(r["id"]), r["name"]) for r in server if r["name"] in ("all", "votings subscribe")
+    ]
+    guild = make_guild(roles=roles)
+    # 1) поставил и тут же снял: Carl роль не выдал — это не ошибка
+    m = make_member(guild)
+    jbot.people[7] = m
+    mid = 1017476950408835182
+    await jbot.rooms.reaction(reaction(mid, "🇦", m), True)
+    await jbot.rooms.reaction(reaction(mid, "🇦", m), False)
+    await settle(jbot)
+    first = has(out, "выдал бы «all»")
+    assert "РАСХОЖДЕНИЕ: Carl не выдал all (реакцию сняли до сверки)" in first
+    assert "совпало" in has(out, "снял бы «all»")
+    # 2) подписки без ✔: роль уже была из другого источника
+    out.clear()
+    other = make_member(guild, roles=[EVERYONE, next(r for r in roles if r.name == "votings subscribe")], mid=8)
+    jbot.people[8] = other
+    await jbot.rooms.reaction(reaction(849976979155451925, "📊", other, 8), True)
+    await settle(jbot)
+    line = has(out, "не выдал бы")
+    assert "РАСХОЖДЕНИЕ: Carl не снял votings subscribe (роль была и до реакции)" in line

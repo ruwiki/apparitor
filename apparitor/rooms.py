@@ -33,6 +33,7 @@ class Rooms:
     def __init__(self, bot: Apparitor):
         self.bot = bot
         self._ours: set[int] | None = None  # id сообщений бота с реакциями: без запроса в БД на каждую реакцию
+        self._latest: dict[tuple[int, int, str], bool] = {}  # (сообщение, участник, эмодзи) -> реакция сейчас стоит
 
     async def ours(self) -> set[int]:
         if self._ours is None:
@@ -162,6 +163,9 @@ class Rooms:
         member = p.member or await self.bot.member(gid, p.user_id)
         if not member or member.bot:
             return
+        key = (p.message_id, member.id, plain(str(p.emoji)))
+        self._latest[key] = added
+        had_before = name in {r.name for r in member.roles}
         need = self.bot.gcfg(gid).reaction_require.get(str(p.message_id))
         denied = added and need and not any(r.name in need for r in member.roles)  # белый список сообщения
         found = [r for r in member.guild.roles if r.name == name]
@@ -178,7 +182,18 @@ class Rooms:
             want_in, want_out = (
                 ({name}, set()) if added and not denied else (set(), {name})
             )  # отказ = роли быть не должно
-            self.bot.spawn(self.bot.parity(member.id, gid, label, want_in, want_out, self.bot.joins.PARITY_DELAY))
+
+            def why() -> str:  # расхождение бывает не ошибкой: модератору так и пишем
+                parts = []
+                if self._latest.get(key) != added:
+                    parts.append("реакцию сняли до сверки" if added else "реакцию поставили снова до сверки")
+                if denied and had_before:
+                    parts.append("роль была и до реакции")
+                return "; ".join(parts)
+
+            self.bot.spawn(
+                self.bot.parity(member.id, gid, label, want_in, want_out, self.bot.joins.PARITY_DELAY, why=why)
+            )
         elif denied:
             return  # убрать чужую реакцию без права Manage Messages нельзя; роль просто не выдаём
         elif added:

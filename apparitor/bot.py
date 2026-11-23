@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Callable
 
 import discord
 from discord import app_commands
@@ -133,10 +134,12 @@ class Apparitor(discord.Client):
         want_out: set[str],
         delay: float,
         unexpected: set[str] = frozenset(),
+        why: Callable[[], str] | None = None,
     ) -> None:
         """Холостой режим: через delay секунд сверить роли участника с тем, что бот сделал бы. Carl-bot действует
         на самом деле, так что расхождение — это либо ошибка бота, либо правило, которого бот не знает.
-        unexpected — роли, которые бот сознательно не выдаёт (права управления): если Carl их вернул, скажем."""
+        unexpected — роли, которые бот сознательно не выдаёт (права управления): если Carl их вернул, скажем.
+        why — вызывается в момент сверки и объясняет расхождение, если оно не ошибка (реакцию успели снять и т. п.)."""
         await asyncio.sleep(delay)
         m = await self.member(guild_id, member_id)
         if not m:
@@ -150,6 +153,8 @@ class Apparitor(discord.Client):
         if stray:
             problems.append(f"Carl не снял {listed(stray)}")
         verdict = "РАСХОЖДЕНИЕ: " + "; ".join(problems) if problems else "совпало с Carl"
+        if problems and why and (reason := why()):
+            verdict += f" ({reason})"
         if extra:
             verdict += f"; Carl вернул то, что бот не вернул бы: {listed(extra)}"
         await self.report(guild_id, f"[холостой] {label} — {verdict}.")

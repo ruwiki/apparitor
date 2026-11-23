@@ -6,13 +6,14 @@
 from __future__ import annotations
 
 import asyncio
+import datetime as dt
 import logging
 import random
 from typing import TYPE_CHECKING
 
 import discord
 
-from .models import listed
+from .models import TS_FMT, listed
 
 if TYPE_CHECKING:
     from .bot import Apparitor
@@ -170,8 +171,4 @@ class Joins:
 
     @staticmethod
     def cutoff(days: int) -> str:
-        import datetime as dt
-
-        from .models import TS_FMT
-
         return (dt.datetime.now(dt.UTC) - dt.timedelta(days=days)).strftime(TS_FMT)
