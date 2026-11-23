@@ -16,6 +16,8 @@ CONDITIONS = ("admitted", "apat")  # ключи карты ролей, кото�
 def admissible(admit: Admit, info: UserInfo) -> tuple[bool, str]:
     if admit.reject_blocked and info.blocked:
         return False, "учётка глобально заблокирована (lock)" if info.locked else "аккаунт заблокирован"
+    if admit.apat_suffices and info.apat:
+        return True, "АПАТ"
     if admit.min_edits and info.editcount < admit.min_edits:
         return False, f"правок {info.editcount} < {admit.min_edits}"
     if admit.min_age_days and info.registration:
@@ -51,5 +53,6 @@ def role_diff(have: set[str], want: set[str], managed: set[str]) -> tuple[list[s
 def decide(admit: Admit, g: GuildCfg, info: UserInfo, have: set[str]) -> Decision:
     ok, why = admissible(admit, info)
     want = set(wanted_roles(g, info)) if ok else set()
-    add, rem = role_diff(have, want, managed_roles(g))
+    managed = managed_roles(g) if ok else managed_roles(g) - set(g.remove_on_confirm)  # отказ: 🆕 не снимать
+    add, rem = role_diff(have, want, managed)
     return Decision(ok=ok, why=why, add=add, remove=rem)

@@ -150,6 +150,12 @@ class RuWiki:
         gui = g["query"].get("globaluserinfo", {})
         return {} if "missing" in gui else gui
 
+    async def name_by_central_id(self, central_id: int) -> str | None:
+        """Глобальная учётка по номеру CentralAuth (его отдаёт WikiAuthBot) -> имя; None — нет такой."""
+        g = await self.mw.get(action="query", meta="globaluserinfo", guiid=central_id)
+        gui = g["query"].get("globaluserinfo", {})
+        return None if "missing" in gui else gui.get("name")
+
     async def users_info(
         self, names: list[str], with_global: bool = True, global_fallback: bool = False
     ) -> dict[str, UserInfo | None]:

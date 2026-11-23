@@ -17,6 +17,18 @@ reject_blocked = true
 report_channel_id = 995099313648701600   # #moderbot — только модераторы
 report_names = true                       # закрытый канал: в отчёте связка ник ↔ вики-аккаунт
 remove_on_confirm = ["🆕 new user"]
+gate_watch = true                         # непроверенных искать в WikiAuthBot (ключ WIKIAUTHBOT_KEY_223183550965481473)
+roles_channel_id = 768773664949927946     # #roles: здесь сообщения бота с реакциями
+optout_channels = [353333123381067777, 778916107893473310]   # #readme, #announcements: выход реакцией 📭, сообщения в личку
+[guild.223183550965481473.admit]          # правило из приветствия в #welcome: АПАТ либо год стажа и более ста правок
+min_edits = 101
+min_age_days = 365
+reject_blocked = true
+apat_suffices = true
+[guild.223183550965481473.track_categories]   # новые каналы здесь получают роль доступа и реакцию; префикс как у ролей сервера
+"360741077193326592" = "+ #"              # Общие
+"607243740607807494" = "+ #"              # Проекты Викимедиа
+"360739274045390848" = "#"                # Тематические
 [guild.223183550965481473.roles]         # admitted/apat — условия; остальные ключи = группы рувики
 admitted = "✔"
 apat = ""

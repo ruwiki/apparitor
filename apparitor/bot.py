@@ -1,8 +1,9 @@
 """Discord-клиент: подключение, синхронизация команд, отчёты, применение решений к участнику.
-Без Message Content Intent — текст сообщений боту не нужен."""
+Без Message Content Intent — текст сообщений боту не нужен (пересылка в личку — штатный forward)."""
 
 from __future__ import annotations
 
+import asyncio
 import logging
 
 import discord
@@ -10,7 +11,9 @@ from discord import app_commands
 
 from . import rules
 from .config import Config, GuildCfg
+from .gate import Gate
 from .models import Decision, UserInfo, Verdict, listed
+from .rooms import Rooms
 from .ruwiki import RuWiki
 from .store import Store
 
@@ -27,6 +30,9 @@ class Apparitor(discord.Client):
         self.tree = app_commands.CommandTree(self)
         self.tree.on_error = self.on_command_error
         self.wiki = RuWiki()  # HTTP-сессию заводит сам при первом запросе: OAuth-колбэк может прийти до Discord
+        self.gate = Gate(self)
+        self.rooms = Rooms(self)
+        self._tasks: set[asyncio.Task] = set()
 
     # --- жизненный цикл ----------------------------------------------------------
     async def setup_hook(self):
@@ -35,10 +41,28 @@ class Apparitor(discord.Client):
         register(self)
         for gid in self.cfg.guilds:
             await self.sync_guild(gid)
+        task = asyncio.create_task(self.gate.run())
+        self._tasks.add(task)
+        task.add_done_callback(self._tasks.discard)
 
     async def close(self):
         await self.wiki.mw.close()
+        await self.gate.close()
         await super().close()
+
+    # --- события каналов, реакций, сообщений ------------------------------------------
+    async def on_guild_channel_create(self, ch: discord.abc.GuildChannel):
+        if ch.guild.id in self.cfg.guilds:
+            await self.rooms.channel_created(ch)
+
+    async def on_raw_reaction_add(self, p: discord.RawReactionActionEvent):
+        await self.rooms.reaction(p, True)
+
+    async def on_raw_reaction_remove(self, p: discord.RawReactionActionEvent):
+        await self.rooms.reaction(p, False)
+
+    async def on_message(self, m: discord.Message):
+        await self.rooms.message(m)
 
     async def sync_guild(self, gid: int) -> bool:
         """Команды на сервер; бота там может ещё не быть — тогда предупреждение, не падение."""
@@ -74,9 +98,8 @@ class Apparitor(discord.Client):
             pass
 
     # --- служебное ----------------------------------------------------------------
-    @property
-    def dry_run(self) -> bool:
-        return self.cfg.dry_run
+    def dry(self, guild_id: int) -> bool:
+        return self.cfg.dry_for(guild_id)
 
     def gcfg(self, guild_id: int) -> GuildCfg:
         return self.cfg.for_guild(guild_id)
@@ -113,49 +136,52 @@ class Apparitor(discord.Client):
         return f"{member.mention}: вики-аккаунт подтверждён"
 
     # --- решение по участнику ---------------------------------------------------------
-    async def evaluate(self, member: discord.Member, info: UserInfo | None, wiki_name: str) -> Verdict:
+    async def evaluate(
+        self, member: discord.Member, info: UserInfo | None, wiki_name: str, quiet: bool = False
+    ) -> Verdict:
         """Единая точка: критерии впуска → роли (или снятие всех управляемых при отказе).
-        Вызывается из /confirm, /link, OAuth-колбэка и /sync."""
+        Вызывается из /confirm, /link, OAuth-колбэка, /sync и обхода новичков (quiet: без строки на каждого
+        в служебный канал — обход шлёт сводку сам)."""
         gid = member.guild.id
         if not info:
             shown = f" ({wiki_name})" if self.gcfg(gid).report_names else ""
-            await self.report(gid, f"{member.mention}: в рувики нет такого участника{shown}")
+            if not quiet:
+                await self.report(gid, f"{member.mention}: в рувики нет такого участника{shown}")
             return Verdict(f"В рувики нет участника {wiki_name}.", notable=True)
-        d = rules.decide(self.cfg.admit, self.gcfg(gid), info, {r.name for r in member.roles})
-        missing = await self.apply(member, info, d)
+        d = rules.decide(self.cfg.admit_for(gid), self.gcfg(gid), info, {r.name for r in member.roles})
+        missing = await self.apply(member, info, d, quiet)
         if not d.ok:
             await self.store.log(str(member.id), "reject", info.name, d.why)
             return Verdict(f"Критерии впуска не пройдены: {d.why}.", notable=True)
         roles = f"выдать {listed(d.add)}, снять {listed(d.remove)}" + (
             f", на сервере нет {listed(missing)}" if missing else ""
         )
-        if self.dry_run:
+        if self.dry(gid):
             return Verdict(f"Холостой режим: роли не менялись (было бы: {roles}); отчёт в служебном канале.", d.changes)
         return Verdict(f"Роли: {roles}.", d.changes)
 
-    async def apply(self, member: discord.Member, info: UserInfo, d: Decision) -> list[str]:
+    async def apply(self, member: discord.Member, info: UserInfo, d: Decision, quiet: bool = False) -> list[str]:
         """Применяет решение (или только отчитывается вхолостую). Возвращает имена ролей, которых нет на сервере."""
         guild = member.guild
+        dry = self.dry(guild.id)
         add = [discord.utils.get(guild.roles, name=n) for n in d.add]
         missing = [n for n, r in zip(d.add, add, strict=True) if r is None]
         add = [r for r in add if r is not None]
         rem = [r for r in member.roles if r.name in d.remove]
         reason = "" if d.ok else d.why
-        if add or rem or reason or self.dry_run:  # вхолостую отчитываемся всегда, иначе тест не виден
+        if not quiet and (add or rem or reason or dry):  # вхолостую отчитываемся всегда, иначе тест не виден
             await self.report(
                 guild.id,
-                f"{'[холостой] ' if self.dry_run else ''}{self.describe(guild.id, member, info)}"
+                f"{'[холостой] ' if dry else ''}{self.describe(guild.id, member, info)}"
                 f"{'; отказ: ' + reason if reason else ''}: выдать {listed(d.add)}, снять {listed(d.remove)}"
                 + (f", нет ролей {listed(missing)}" if missing else ""),
             )
-        if not self.dry_run:
+        if not dry:
             if add:
                 await member.add_roles(*add, reason=f"Apparitor: {info.name} ({info.labels_text})")
             if rem:
                 await member.remove_roles(*rem, reason=f"Apparitor: {reason or 'sync'}")
-        await self.store.log(
-            str(member.id), "roles-dry" if self.dry_run else "roles", info.name, f"+{d.add} -{d.remove}"
-        )
+        await self.store.log(str(member.id), "roles-dry" if dry else "roles", info.name, f"+{d.add} -{d.remove}")
         return missing
 
     async def after_link(self, discord_id: int, guild_id: int, wiki_name: str) -> str:

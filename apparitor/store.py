@@ -26,6 +26,10 @@ SCHEMA = {
                    code varchar(64) not null, issued_at varchar(20) not null)""",
     "candidates": """(guild_id bigint not null, discord_id bigint not null, wiki_name varchar(255) not null,
                       source varchar(32) not null, seen_at varchar(20) not null, primary key (guild_id, discord_id))""",
+    "reactions": """(guild_id bigint not null, message_id bigint not null, emoji varchar(64) not null,
+                     action varchar(16) not null, target bigint not null, primary key (message_id, emoji))""",
+    "optout": """(guild_id bigint not null, discord_id bigint not null, since varchar(20) not null,
+                  primary key (guild_id, discord_id))""",
     "log": """(id integer primary key {autoinc}, ts varchar(20), actor varchar(32), action varchar(32),
                target varchar(255), detail text)""",
 }
@@ -198,3 +202,42 @@ class Store:
             "insert into log (ts, actor, action, target, detail) values (?,?,?,?,?)",
             (now_ts(), actor, action, target, detail),
         )
+
+    # --- реакции и выход из каналов ------------------------------------------------
+    async def add_reaction(self, guild_id: int, message_id: int, emoji: str, action: str, target: int) -> None:
+        """Реакция на сообщении бота -> действие: role (target = id роли) или optout (target = 0)."""
+        await self._run(
+            self._exec,
+            self._upsert_sql("reactions", "guild_id, message_id, emoji, action, target", 5),
+            (guild_id, message_id, emoji, action, target),
+        )
+
+    async def reaction(self, message_id: int, emoji: str) -> tuple[str, int] | None:
+        r = await self._run(
+            lambda: self._exec(
+                "select action, target from reactions where message_id=? and emoji=?", (message_id, emoji)
+            ).fetchone()
+        )
+        return r and (r[0], int(r[1]))
+
+    async def reactions_of(self, guild_id: int) -> list[tuple[int, str, str, int]]:
+        """(message_id, emoji, action, target) по серверу — для поиска свободного места и эмодзи."""
+        rows = await self._run(
+            lambda: self._exec(
+                "select message_id, emoji, action, target from reactions where guild_id=?", (guild_id,)
+            ).fetchall()
+        )
+        return [(int(m), e, a, int(t)) for m, e, a, t in rows]
+
+    async def set_optout(self, guild_id: int, discord_id: int, on: bool) -> None:
+        if on:
+            sql, params = self._upsert_sql("optout", "guild_id, discord_id, since", 3), (guild_id, discord_id, now_ts())
+        else:
+            sql, params = "delete from optout where guild_id=? and discord_id=?", (guild_id, discord_id)
+        await self._run(self._exec, sql, params)
+
+    async def optouts(self, guild_id: int) -> list[int]:
+        rows = await self._run(
+            lambda: self._exec("select discord_id from optout where guild_id=?", (guild_id,)).fetchall()
+        )
+        return [int(r[0]) for r in rows]

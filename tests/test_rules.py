@@ -51,12 +51,29 @@ def test_decide_reject_strips_managed(cfg):
     assert not d.ok and d.add == [] and d.remove == ["Администратор", "✔"] and d.changes
 
 
+def test_community_rule_apat_or_year_and_edits(cfg):
+    """Сервер сообщества: АПАТ либо год стажа и более ста правок (приветствие в #welcome)."""
+    a = cfg.admit_for(GUILD)
+    assert rules.admissible(a, info(groups=["autoreview"], editcount=3, registration="2026-11-01T00:00:00Z"))[0]
+    assert rules.admissible(a, info(editcount=101, registration="2020-01-01T00:00:00Z"))[0]
+    assert not rules.admissible(a, info(editcount=100, registration="2020-01-01T00:00:00Z"))[0]
+    assert not rules.admissible(a, info(editcount=5000, registration="2999-01-01T00:00:00Z"))[0]
+    assert not rules.admissible(a, info(groups=["editor"], blocked=True))[0], "блок сильнее АПАТ"
+    assert cfg.admit_for(RUWIKI) is cfg.admit, "без своей секции — общие критерии"
+
+
+def test_decide_reject_keeps_remove_on_confirm(cfg):
+    d = rules.decide(cfg.admit_for(GUILD), cfg.for_guild(GUILD), info(editcount=1), {"🆕 new user"})
+    assert not d.ok and d.remove == []
+
+
 def test_commands_registered(bot):
     assert sorted(c.name for c in bot.tree.get_commands()) == [
         "audit",
         "confirm",
         "link",
         "login",
+        "optout-post",
         "status",
         "sync",
         "verify",

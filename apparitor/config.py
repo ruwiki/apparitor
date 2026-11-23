@@ -32,6 +32,7 @@ class Admit:
     min_edits: int = 0
     min_age_days: int = 0
     reject_blocked: bool = True
+    apat_suffices: bool = False  # АПАТ впускает без проверки правок и стажа (правило сервера сообщества)
 
 
 @dataclass
@@ -43,6 +44,12 @@ class GuildCfg:
     report_names: bool = False
     roles: dict[str, str] = field(default_factory=dict)
     remove_on_confirm: list[str] = field(default_factory=list)
+    admit: Admit | None = None  # свои критерии впуска; нет — общие [admit]
+    dry_run: bool | None = None  # свой холостой режим; нет — общий
+    gate_watch: bool = False  # искать связки непроверенных в WikiAuthBot (нужен WIKIAUTHBOT_KEY_<id сервера>)
+    roles_channel_id: int = 0  # канал, где бот держит своё сообщение с реакциями
+    track_categories: dict[str, str] = field(default_factory=dict)  # id категории -> префикс роли нового канала
+    optout_channels: list[int] = field(default_factory=list)  # из них можно выйти реакцией, сообщения — в личку
 
 
 @dataclass
@@ -59,6 +66,13 @@ class Config:
         """Нет секции — пустая: ролей нет, служебного канала нет; команды отвечают только спросившему."""
         return self.guild.get(guild_id) or GuildCfg()
 
+    def admit_for(self, guild_id: int) -> Admit:
+        return self.for_guild(guild_id).admit or self.admit
+
+    def dry_for(self, guild_id: int) -> bool:
+        g = self.for_guild(guild_id).dry_run
+        return self.dry_run if g is None else g
+
 
 def _section(cls, raw: dict, where: str):
     """dataclass из секции TOML; неизвестный ключ (опечатка) — понятная ошибка вместо TypeError при старте."""
@@ -68,6 +82,15 @@ def _section(cls, raw: dict, where: str):
     return cls(**raw)
 
 
+def _guild(raw: dict, where: str) -> GuildCfg:
+    raw = dict(raw)
+    admit = raw.pop("admit", None)
+    g = _section(GuildCfg, raw, where)
+    if admit is not None:
+        g.admit = _section(Admit, admit, f"{where}.admit")
+    return g
+
+
 def load_config(path: str = "config.toml") -> Config:
     with open(path, "rb") as f:
         raw = tomllib.load(f)
@@ -75,7 +98,7 @@ def load_config(path: str = "config.toml") -> Config:
         raise SystemExit("guilds в конфиге обязателен: список id серверов, на которых работает бот")
     return Config(
         guilds=[int(g) for g in raw["guilds"]],
-        guild={int(k): _section(GuildCfg, v, f"guild.{k}") for k, v in raw.get("guild", {}).items()},
+        guild={int(k): _guild(v, f"guild.{k}") for k, v in raw.get("guild", {}).items()},
         admit=_section(Admit, raw.get("admit", {}), "admit"),
         dry_run=bool(raw.get("dry_run", True)),
         base_url=raw.get("base_url", ""),
