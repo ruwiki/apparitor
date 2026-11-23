@@ -329,7 +329,9 @@ def test_cmd_apply_prints_only_without_yes_and_refuses_changed_server(tmp_path, 
     p = build(snap, SPEC, Opts(position=3))
     plan = {"digest": wall.digest(p.ops), "spec": wall.asdict(SPEC), "opts": wall.asdict(p.opts)}
     (tmp_path / "plan.json").write_text(json.dumps(plan, ensure_ascii=False), encoding="utf-8")
-    args = argparse.Namespace(token_file="x", bot=True, read_token_file=None, read_bot=False, yes=False)
+    args = argparse.Namespace(
+        token_file="x", bot=True, read_token_file=None, read_bot=False, yes=False, welcome_live=False
+    )
     out = []
     assert wall.cmd_apply(args, tmp_path, out.append) == 0
     assert all(c[0] == "GET" for c in fake.calls) and "Это только печать" in out[-1]
@@ -365,3 +367,27 @@ def test_snapshot_roundtrip_keeps_only_ids_and_roles(tmp_path: Path):
     back = wall.load(tmp_path)
     assert back.members[0] == {"id": "s1", "bot": False, "roles": ["new"]}
     assert "не должно" not in (tmp_path / "members.jsonl").read_text(encoding="utf-8")
+
+
+def test_cmd_apply_yes_prints_welcome_config_only_with_flag(tmp_path, monkeypatch):
+    """--welcome-live: после успешного apply — правка конфига с id нового канала; сам конфиг скрипт не трогает."""
+    snap = world()
+    fake = FakeRest(snap)
+    monkeypatch.setattr(wall, "Rest", lambda token: fake)
+    monkeypatch.setattr(wall, "read_token", lambda path, bot: "t")
+    p = build(snap, SPEC, Opts(position=3))
+    plan = {"digest": wall.digest(p.ops), "spec": wall.asdict(SPEC), "opts": wall.asdict(p.opts)}
+    (tmp_path / "plan.json").write_text(json.dumps(plan, ensure_ascii=False), encoding="utf-8")
+    args = argparse.Namespace(
+        token_file="x", bot=True, read_token_file=None, read_bot=False, yes=True, welcome_live=False
+    )
+    out = []
+    assert wall.cmd_apply(args, tmp_path, out.append) == 0
+    assert "проверка: все записи совпали с планом" in out and not any("welcome_channel_id" in x for x in out)
+    fake2 = FakeRest(snap)
+    monkeypatch.setattr(wall, "Rest", lambda token: fake2)
+    (tmp_path / "changes.jsonl").unlink()
+    args.welcome_live, out = True, []
+    assert wall.cmd_apply(args, tmp_path, out.append) == 0
+    text = "\n".join(out)
+    assert "welcome_channel_id = new1" in text and 'welcome = "live"' in text and f"[guild.{G}.features]" in text

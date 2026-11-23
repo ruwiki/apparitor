@@ -719,6 +719,17 @@ def cmd_plan(a, d: Path, out=print) -> Planner:
     return p
 
 
+def welcome_snippet(spec: Spec, new_id: str) -> str:
+    """Правка конфига: приветствие Apparitor в новом #welcome (Carl и WikiAuthBot2 пишут в старый до переключения)."""
+    return (
+        "Правка config.toolforge.toml (сам файл скрипт не меняет), затем влить и выкатить:\n"
+        f"  [guild.{spec.guild_id}]\n"
+        f"  welcome_channel_id = {new_id}\n"
+        f"  [guild.{spec.guild_id}.features]\n"
+        '  welcome = "live"'
+    )
+
+
 def cmd_apply(a, d: Path, out=print) -> int:
     saved = json.loads((d / "plan.json").read_text(encoding="utf-8"))
     spec, opts = Spec(**{k: tuple(v) if isinstance(v, list) else v for k, v in saved["spec"].items()}), saved["opts"]
@@ -750,6 +761,8 @@ def cmd_apply(a, d: Path, out=print) -> int:
     bad = verify(after, p.ops, ids)
     report(snap, after, spec, out)
     out("проверка: все записи совпали с планом" if not bad else "РАСХОЖДЕНИЯ:\n  " + "\n  ".join(bad))
+    if a.welcome_live and not bad and NEW in ids:
+        out(welcome_snippet(spec, ids[NEW]))
     return 0 if not bad else 1
 
 
@@ -780,6 +793,9 @@ def main(argv=None) -> int:
         "--system-channel", action="store_true", help="перенести системный канал в новый #welcome (по умолчанию нет)"
     )
     ap.add_argument("--rename-old", help="переименовать старый #welcome (по умолчанию имя не трогаем)")
+    ap.add_argument(
+        "--welcome-live", action="store_true", help="apply: после успеха напечатать правку конфига приветствия"
+    )
     ap.add_argument("--yes", action="store_true")
     a = ap.parse_args(argv)
     d = Path(a.dir).expanduser()
