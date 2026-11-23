@@ -127,6 +127,11 @@ class Rooms:
             role = member.guild.get_role(target)
             if not role:
                 await self.bot.report(p.guild_id, f"Реакция {p.emoji}: роли {target} больше нет.")
+            elif self.bot.dry(p.guild_id):
+                verb = "выдал бы" if added else "снял бы"
+                await self.bot.report(
+                    p.guild_id, f"[холостой] реакция {p.emoji} от {member.mention}: {verb} «{role.name}»."
+                )
             elif added:
                 await member.add_roles(role, reason="Apparitor: вход по реакции")
             else:
@@ -137,6 +142,11 @@ class Rooms:
     async def optout(self, member: discord.Member, on: bool, p: discord.RawReactionActionEvent | None = None) -> None:
         g = self.bot.gcfg(member.guild.id)
         chans = [c for c in (member.guild.get_channel(i) for i in g.optout_channels) if c]
+        if self.bot.dry(member.guild.id):
+            names = ", ".join(f"#{c.name}" for c in chans)
+            what = f"спрятал бы {names}, пересылал бы их сообщения в личку" if on else f"вернул бы {names}"
+            await self.bot.report(member.guild.id, f"[холостой] 📭 {member.mention}: {what}.")
+            return
         if not on:
             for c in chans:
                 await c.set_permissions(member, overwrite=None, reason="Apparitor: вернулся в канал")
@@ -167,6 +177,8 @@ class Rooms:
     # --- пересылка -------------------------------------------------------------------
     async def message(self, m: discord.Message) -> None:
         if not m.guild or m.channel.id not in self.bot.gcfg(m.guild.id).optout_channels:
+            return
+        if self.bot.dry(m.guild.id):
             return
         for uid in await self.bot.store.optouts(m.guild.id):
             member = await self.bot.member(m.guild.id, uid)

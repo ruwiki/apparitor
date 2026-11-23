@@ -86,3 +86,60 @@ async def test_foreign_reaction_skips_db(bot, monkeypatch):
     await bot.rooms.ours()
     monkeypatch.setattr(bot.store, "reaction", boom)
     await bot.rooms.reaction(SimpleNamespace(guild_id=GUILD, user_id=5, message_id=123, emoji="👍"), True)
+
+
+def fake_member(role=None, optout_channels=()):
+    """Участник с ловушками: любой вызов, меняющий сервер, роняет тест."""
+    calls = []
+
+    async def boom(*a, **k):
+        calls.append((a, k))
+        raise AssertionError("в холостом режиме сервер менять нельзя")
+
+    guild = SimpleNamespace(
+        id=GUILD,
+        name="S",
+        get_role=lambda i: role,
+        get_channel=lambda i: SimpleNamespace(id=i, name="c", mention=f"<#{i}>", set_permissions=boom),
+    )
+    return SimpleNamespace(
+        id=7, mention="<@7>", bot=False, guild=guild, add_roles=boom, remove_roles=boom, create_dm=boom
+    )
+
+
+async def test_reaction_dry_run_only_reports(bot):
+    """Реакция на сообщении бота при dry_run: роль не меняется, в служебном канале строка «выдал бы»."""
+    out = capture(bot)
+    await bot.store.add_reaction(GUILD, 123, "🇦", "role", 99)
+    m = fake_member(role=SimpleNamespace(id=99, name="all"))
+    p = SimpleNamespace(guild_id=GUILD, user_id=7, message_id=123, emoji="🇦", member=m, channel_id=1)
+    await bot.rooms.reaction(p, True)
+    assert out and out[-1].startswith("[холостой]") and "выдал бы «all»" in out[-1]
+    await bot.rooms.reaction(p, False)
+    assert "снял бы «all»" in out[-1]
+
+
+async def test_optout_dry_run_only_reports(bot):
+    out = capture(bot)
+    await bot.store.add_reaction(GUILD, 124, "📭", "optout", 0)
+    m = fake_member()
+    p = SimpleNamespace(guild_id=GUILD, user_id=7, message_id=124, emoji="📭", member=m, channel_id=1)
+    await bot.rooms.reaction(p, True)
+    assert "[холостой]" in out[-1] and "📭" in out[-1]
+    assert await bot.store.optouts(GUILD) == []  # и в БД выход не записан
+
+
+async def test_forward_dry_run_does_nothing(bot, monkeypatch):
+    await bot.store.set_optout(GUILD, 7, True)
+
+    async def boom(*a, **k):
+        raise AssertionError("пересылка в холостом режиме")
+
+    async def member(gid, did):  # участник найден: иначе тест прошёл бы, не дойдя до пересылки
+        return fake_member()
+
+    monkeypatch.setattr(bot, "member", member)
+
+    ch = bot.gcfg(GUILD).optout_channels[0]
+    m = SimpleNamespace(guild=SimpleNamespace(id=GUILD), channel=SimpleNamespace(id=ch), forward=boom)
+    await bot.rooms.message(m)
