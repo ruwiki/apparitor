@@ -1,4 +1,4 @@
-"""Выход из #readme и #announcements строками в сообщении бота в #roles: «− #канал — выйти (…придут в личку)»."""
+"""Выход из #readme и #announcements — строки «− #канал: поставьте реакцию — выйти (…), снимите — вернуться»."""
 
 from types import SimpleNamespace
 
@@ -107,14 +107,14 @@ async def test_lines_go_into_one_message_with_common_header(bot, monkeypatch):
     await bot.rooms.ensure_optout(guild)
     (msg,) = chans[ROLES].msgs.values()
     assert msg.content == (
-        f"{HEADER}\n🚪 − #readme — выйти (сообщения придут в личку)"
-        "\n🔕 − #announcements — выйти (сообщения придут в личку)"
+        f"{HEADER}\n🚪 − #readme: поставьте реакцию — выйти (новые сообщения придут в личку), снимите — вернуться"
+        "\n🔕 − #announcements: поставьте реакцию — выйти (новые сообщения придут в личку), снимите — вернуться"
     )
     assert HEADER.startswith("Каналы:") and msg.reactions == ["🚪", "🔕"]
     assert await bot.store.reaction(msg.id, "🚪") == ("optout", README)
     assert await bot.store.reaction(msg.id, "🔕") == ("optout", ANN)
     await bot.rooms.ensure_optout(guild)  # повторный запуск (рестарт) строк не множит
-    assert len(chans[ROLES].msgs) == 1 and msg.content.count("— выйти (") == 2
+    assert len(chans[ROLES].msgs) == 1 and msg.content.count("поставьте реакцию — выйти (") == 2
     # новый канал дописывается в то же сообщение
     emoji = await bot.rooms.add_entry(guild, "<#555>", "role", 99)
     assert msg.content.endswith(f"\n{emoji} <#555>") and len(chans[ROLES].msgs) == 1

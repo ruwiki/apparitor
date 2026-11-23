@@ -1,7 +1,7 @@
 """Каналы по реакциям на сообщениях бота: новые каналы отслеживаемых категорий получают роль доступа и
-строку с реакцией; в том же сообщении по строке «− #канал — выйти» на каждый optout-канал (readme, announcements):
-реакция прячет канал (запрет на участника), его новые сообщения бот пересылает в личку. Пересылка — штатная
-пересылка Discord (forward): текст сообщений боту читать не нужно."""
+строку с реакцией; в том же сообщении по строке «− #канал: поставьте реакцию — выйти…» на каждый
+optout-канал (readme, announcements): реакция прячет канал (запрет на участника), его новые сообщения
+бот пересылает в личку. Пересылка — штатная пересылка Discord (forward): текст сообщений боту читать не нужно."""
 
 from __future__ import annotations
 
@@ -113,7 +113,7 @@ class Rooms:
             return emoji
 
     async def ensure_optout(self, guild: discord.Guild) -> None:
-        """Строка «− #канал — выйти» в сообщении бота для каждого optout-канала, где её ещё нет. Холостой режим —
+        """Строка «− #канал: … выйти…» в сообщении бота для каждого optout-канала, где её ещё нет. Холостой режим —
         только отчёт, раз за запуск."""
         g = self.bot.gcfg(guild.id)
         if not g.roles_channel_id or not g.optout_channels:
@@ -126,7 +126,7 @@ class Rooms:
             if cid in have or not ch:
                 continue
             emoji = g.optout_emoji.get(str(cid)) or next((e for e in OPTOUT_POOL if e not in used), "")
-            label = f"− #{ch.name} — выйти (сообщения придут в личку)"
+            label = f"− #{ch.name}: поставьте реакцию — выйти (новые сообщения придут в личку), снимите — вернуться"
             used.add(emoji)
             if self.bot.dry(guild.id):
                 if cid not in self._told:
@@ -222,7 +222,7 @@ class Rooms:
             await member.remove_roles(found[0], reason="Apparitor: выход по реакции")
 
     async def optout(self, member: discord.Member, on: bool, cid: int, p: discord.RawReactionActionEvent) -> None:
-        """Реакция на строке «− #канал — выйти»: поставили — канал прячется (запрет VIEW на участника, остальные его
+        """Реакция на строке «− #канал: … выйти…»: поставили — канал прячется (запрет VIEW на участника, остальные его
         записи в канале целы) и новые сообщения идут в личку; сняли — канал возвращается."""
         gid, emoji = member.guild.id, str(p.emoji)
         c = member.guild.get_channel(cid)
