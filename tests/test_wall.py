@@ -233,7 +233,7 @@ def test_bots_with_a_role_keep_the_channels_they_write_in():
 
 def test_role_moves_and_system_channel():
     snap = world()
-    p = build(snap, SPEC, Opts(position=3))
+    p = build(snap, SPEC, Opts(position=3, system_channel=True))
     after = apply_to_snap(snap, p.ops)
     pos = {r["name"]: r["position"] for r in after.roles}
     assert (
@@ -241,16 +241,16 @@ def test_role_moves_and_system_channel():
     )  # ниже поднятой роли сдвинулись вниз
     assert after.guild["system_channel_id"] == NEW
     assert [o.kind for o in p.ops][:2] == ["position", "create"]  # сначала роль и новый #welcome, потом скрытие
-    assert build(snap, SPEC, Opts(position=3, system_channel=False)).ops[-1].kind != "system"
+    assert not any(o.kind == "system" for o in build(snap, SPEC, Opts(position=3)).ops)  # по умолчанию канал не трогаем
     other = world()
-    other.guild["system_channel_id"] = "else"  # системный канал уже не старый #welcome — не трогаем
-    assert not any(o.kind == "system" for o in build(other, SPEC, Opts(position=3)).ops)
+    other.guild["system_channel_id"] = "else"  # системный канал уже не старый #welcome — не трогаем и с флагом
+    assert not any(o.kind == "system" for o in build(other, SPEC, Opts(position=3, system_channel=True)).ops)
 
 
 def test_apply_then_verify_then_rollback_restores(tmp_path):
     snap = world()
     fake = FakeRest(snap)
-    p = build(snap, SPEC, Opts(position=3))
+    p = build(snap, SPEC, Opts(position=3, system_channel=True))
     ids = wall.run_apply(fake, tmp_path, p.ops, G, "t")
     assert ids[NEW] == "new1"
     now = wall.fetch(fake, G)
@@ -290,7 +290,7 @@ def test_rollback_leaves_changes_made_by_others(tmp_path):
 def test_apply_stops_on_error_and_rollback_undoes_done_part(tmp_path):
     snap = world()
     fake = FakeRest(snap, fail={HUB})  # #server-hub (тип 20) не принимает права
-    p = build(snap, SPEC, Opts(position=3))
+    p = build(snap, SPEC, Opts(position=3, system_channel=True))
     with pytest.raises(RestError):
         wall.run_apply(fake, tmp_path, p.ops, G, "t")
     log = [json.loads(x) for x in (tmp_path / "changes.jsonl").read_text(encoding="utf-8").splitlines()]

@@ -221,7 +221,7 @@ class Spec:
 class Opts:
     position: int = 49  # куда поднять роль Apparitor: выше самой верхней реакционной роли (#requests-fast = 48)
     groups: tuple = ("wall", "roles", "position")
-    system_channel: bool = True
+    system_channel: bool = False  # перенос системного канала: буст-уведомления с ником бустера увидели бы новички
     rename_old: str = ""
     board_channel: str = ""
     board_categories: tuple = ()
@@ -682,7 +682,7 @@ def make_opts(a: argparse.Namespace, spec: Spec) -> Opts:
     o = Opts(
         position=a.apparitor_position,
         groups=tuple(g for g in a.groups.split(",") if g),
-        system_channel=not a.no_system_channel,
+        system_channel=a.system_channel,
         rename_old=a.rename_old or "",
     )
     for g in o.groups:
@@ -776,7 +776,9 @@ def main(argv=None) -> int:
     ap.add_argument("--config", default="config.toolforge.toml")
     ap.add_argument("--groups", default="wall,roles,position", help=f"из: {', '.join(GROUPS)}")
     ap.add_argument("--apparitor-position", type=int, default=49)
-    ap.add_argument("--no-system-channel", action="store_true")
+    ap.add_argument(
+        "--system-channel", action="store_true", help="перенести системный канал в новый #welcome (по умолчанию нет)"
+    )
     ap.add_argument("--rename-old", help="переименовать старый #welcome (по умолчанию имя не трогаем)")
     ap.add_argument("--yes", action="store_true")
     a = ap.parse_args(argv)
