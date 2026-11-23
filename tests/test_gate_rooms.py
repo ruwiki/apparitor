@@ -1,3 +1,4 @@
+import asyncio
 from types import SimpleNamespace
 
 from tests.conftest import GUILD, info
@@ -209,3 +210,51 @@ async def test_sync_warns_about_dropped_checkmark(bot, monkeypatch):
     inter = SimpleNamespace(guild_id=GUILD, response=SimpleNamespace(defer=defer), followup=SimpleNamespace(send=send))
     await bot.tree.get_command("sync").callback(inter)
     assert "✔ потеряли бы 1" in sent[0] and "Новичок" in sent[0]
+
+
+async def test_import_links_from_wikiauthbot(bot, monkeypatch):
+    """Связки всех участников без связки переезжают в links; уже связанные, без связки и сбои — считаются отдельно."""
+    await bot.store.link(1, "Старая", "oauth", "x")  # уже связан: не трогаем, не спрашиваем
+    asked = []
+
+    async def whois(gid, did):
+        asked.append(did)
+        if did == 4:
+            raise RuntimeError("503")
+        return {2: 77, 3: None, 5: 88}[did]
+
+    async def by_id(cid):
+        return {77: "Двойка", 88: None}[cid]
+
+    monkeypatch.setattr(bot.gate.wab, "whois", whois)
+    monkeypatch.setattr(bot.wiki, "name_by_central_id", by_id)
+    bot.gate.pace = 0
+    members = [SimpleNamespace(id=i, name=f"u{i}", bot=False) for i in (1, 2, 3, 4, 5)]
+    members.append(SimpleNamespace(id=6, name="robot", bot=True))
+    monkeypatch.setattr(bot, "get_guild", lambda gid: SimpleNamespace(members=members))
+    head, body = await bot.gate.import_links(GUILD)
+    assert asked == [2, 3, 4, 5]
+    assert "было 4; импортировано 1; в WikiAuthBot связки нет 1; имя по номеру не найдено 1; ошибок 1" in head
+    assert await bot.store.wiki_of(2) == "Двойка" and await bot.store.wiki_of(1) == "Старая"
+    assert body == "u2\tДвойка\t77"  # report_names сервера сообщества включён
+    assert (await bot.gate.import_links(GUILD))[0].count("импортировано 1") == 0  # второй раз Двойку не просим
+
+
+async def test_import_scheduling(bot, monkeypatch):
+    """Импорт только где включён и есть ключ; чаще раза в сутки не запускается."""
+    runs = []
+
+    async def fake_run(gid):
+        runs.append(gid)
+
+    monkeypatch.setattr(bot.gate, "run_import", fake_run)
+    monkeypatch.delenv(f"WIKIAUTHBOT_KEY_{GUILD}", raising=False)
+    bot.gate.maybe_import(GUILD)
+    await asyncio.sleep(0)
+    assert runs == []  # ключа нет
+    monkeypatch.setenv(f"WIKIAUTHBOT_KEY_{GUILD}", "k")
+    bot.gate.maybe_import(GUILD)
+    bot.gate.maybe_import(GUILD)  # второй вызов сразу — нет
+    bot.gate.maybe_import(1044474820089368666)  # import_links на этом сервере не включён
+    await asyncio.sleep(0)
+    assert runs == [GUILD]

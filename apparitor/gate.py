@@ -22,6 +22,7 @@ log = logging.getLogger("apparitor.gate")
 TICK = 300  # секунд между обходами
 FRESH = dt.timedelta(days=2)  # недавно зашедших проверяем каждый обход, остальных — раз в STALE
 STALE = dt.timedelta(hours=6)
+IMPORT_EVERY = dt.timedelta(hours=24)  # повторный импорт трогает только тех, у кого связки в БД ещё нет
 INLINE = 5  # больше строк — одной сводкой с файлом
 
 
@@ -29,6 +30,8 @@ class Gate:
     def __init__(self, bot: Apparitor):
         self.bot = bot
         self.wab = WikiAuthBot(UA)
+        self.pace = 0.7  # секунд между запросами к WikiAuthBot при импорте (как в аудите 23.11)
+        self.imported: dict[int, dt.datetime] = {}  # server id -> когда запускали импорт связок
         self.last: dict[int, dt.datetime] = {}  # discord_id -> когда спрашивали WikiAuthBot
         self.told: dict[int, str] | None = None  # discord_id -> отпечаток последнего отчёта; живёт и в БД, чтобы
         # после рестарта не слать всё заново
@@ -39,6 +42,8 @@ class Gate:
     async def run(self) -> None:
         await self.bot.wait_until_ready()
         while not self.bot.is_closed():
+            for gid in self.bot.cfg.guilds:
+                self.maybe_import(gid)
             for gid in self.watched():
                 try:
                     await self.sweep(gid)
@@ -80,6 +85,60 @@ class Gate:
                 await self.bot.store.gate_told_set(m.id, d)
                 lines.append(line)
         await self.tell(gid, lines)
+
+    def maybe_import(self, gid: int) -> None:
+        """Раз в сутки в фоне; на запуске сразу. Импорт — до ухода WikiAuthBot: после ухода связок уже не спросить."""
+        now = dt.datetime.now(dt.UTC)
+        if not self.bot.gcfg(gid).import_links or not WikiAuthBot.key(gid):
+            return
+        if (last := self.imported.get(gid)) and now - last < IMPORT_EVERY:
+            return
+        self.imported[gid] = now
+        self.bot.spawn(self.run_import(gid))
+
+    async def run_import(self, gid: int) -> None:
+        try:
+            head, body = await self.import_links(gid)
+        except Exception:
+            log.exception("импорт связок %s", gid)
+            self.imported.pop(gid, None)  # повторим на следующем обходе
+            return
+        file = discord.File(io.BytesIO(body.encode()), filename=f"import-{gid}.txt") if body else None
+        await self.bot.report(gid, head, file=file)
+
+    async def import_links(self, gid: int) -> tuple[str, str]:
+        """Связки всех участников сервера из WikiAuthBot в таблицу links (method wikiauthbot): чтобы после ухода
+        WikiAuthBot с сервера подтверждение никто не потерял. Уже связанных не трогаем и не перепроверяем.
+        Возвращает (итог строкой, список «логин<TAB>имя<TAB>номер» для файла, если report_names)."""
+        guild = self.bot.get_guild(gid)
+        linked = {d for d, _ in await self.bot.store.all_links()}
+        todo = [m for m in guild.members if not m.bot and m.id not in linked]
+        n = {"imported": 0, "no_link": 0, "no_name": 0, "errors": 0}
+        lines = []
+        for m in todo:
+            try:
+                central = await self.wab.whois(gid, m.id)
+                name = await self.bot.wiki.name_by_central_id(central) if central is not None else None
+            except Exception as e:  # сбой по одному участнику не обрывает импорт
+                log.warning("импорт %s: %s", m.id, e)
+                n["errors"] += 1
+                continue
+            finally:
+                await asyncio.sleep(self.pace)
+            if central is None:
+                n["no_link"] += 1
+            elif not name:
+                n["no_name"] += 1
+            else:
+                await self.bot.store.link(m.id, name, "wikiauthbot", f"central {central}; импорт")
+                n["imported"] += 1
+                lines.append(f"{m.name}\t{name}\t{central}")
+        head = (
+            f"Импорт связок из WikiAuthBot: без связки в боте было {len(todo)}; импортировано {n['imported']}; "
+            f"в WikiAuthBot связки нет {n['no_link']}; имя по номеру не найдено {n['no_name']}; ошибок {n['errors']}."
+        )
+        await self.bot.store.log("gate", "import-links", str(gid), head)
+        return head, "\n".join(lines) if self.bot.gcfg(gid).report_names else ""
 
     async def check(self, m: discord.Member) -> str | None:
         """Строка отчёта или None, если связки в WikiAuthBot нет."""

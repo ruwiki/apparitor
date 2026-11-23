@@ -53,6 +53,7 @@ class GuildCfg:
     admit: Admit | None = None  # свои критерии впуска; нет — общие [admit]
     dry_run: bool | None = None  # свой холостой режим; нет — общий
     gate_watch: bool = False  # искать связки непроверенных в WikiAuthBot (нужен WIKIAUTHBOT_KEY_<id сервера>)
+    import_links: bool = False  # перенести в свою БД связки всех участников из WikiAuthBot (только запись в БД бота)
     roles_channel_id: int = 0  # канал, где бот держит своё сообщение с реакциями
     track_categories: dict[str, str] = field(default_factory=dict)  # id категории -> префикс роли нового канала
     optout_channels: list[int] = field(default_factory=list)  # из них можно выйти реакцией, сообщения — в личку
