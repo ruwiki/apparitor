@@ -268,7 +268,7 @@ def test_apply_then_verify_then_rollback_restores(tmp_path):
     # новый канал не удалён, а спрятан
     hidden = back.chan("new1")
     assert ow_of(back, "new1")[G][1] & VIEW and not ow_of(back, "new1")[G][0] & VIEW
-    assert hidden["name"] == "welcome"
+    assert hidden["name"] == "lobby"
 
 
 def test_rollback_leaves_changes_made_by_others(tmp_path):
@@ -399,3 +399,14 @@ def test_cmd_apply_yes_prints_welcome_config_only_with_flag(tmp_path, monkeypatc
     assert wall.cmd_apply(args, tmp_path, out.append) == 0
     text = "\n".join(out)
     assert "welcome_channel_id = new1" in text and 'welcome = "live"' in text and f"[guild.{G}.features]" in text
+
+
+def test_default_plan_names_the_channel_lobby_and_keeps_old_name():
+    """Решение хозяина: новый канал lobby; старый #welcome не переименовываем (rename — только по флагу)."""
+    snap = world()
+    p = build(snap, SPEC, Opts(position=3))
+    create = next(o for o in p.ops if o.kind == "create")
+    assert create.extra["name"] == "lobby" and not any(o.kind == "rename" for o in p.ops)
+    after = apply_to_snap(snap, p.ops)
+    assert after.chan(OLD)["name"] == "welcome" and after.chan(NEW)["name"] == "lobby"
+    assert any(o.kind == "rename" for o in build(snap, SPEC, Opts(position=3, rename_old="welcome-archive")).ops)

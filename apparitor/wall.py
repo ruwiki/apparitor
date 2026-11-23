@@ -9,8 +9,8 @@
 
 Правки прав — только минимальными битами (добавить или убрать), а не заменой всех перекрытий канала: запреты на
 участников и роль «✔ read-only 🔇» переживают скрипт. Откат возвращает только те записи, которые поставил apply, и
-только если с тех пор их никто не менял. Новый #welcome откат не удаляет — прячет. Токен для apply и rollback нужен с
-правами Manage Channels, Manage Roles и Manage Guild; в репозиторий снимки (в них id участников) не кладём."""
+только если с тех пор их никто не менял. Новый канал (lobby) откат не удаляет, а прячет. Токен для apply и rollback —
+с правами Manage Channels, Manage Roles и Manage Guild; снимки (в них id участников) в репозиторий не кладём."""
 
 from __future__ import annotations
 
@@ -193,7 +193,7 @@ class Spec:
     guild_id: str = "223183550965481473"
     verified: str = "✔"
     newbie: str = "🆕 new user"
-    mods: tuple = ("Модератор чата", "Техмодерка")  # видят новый #welcome
+    mods: tuple = ("Модератор чата", "Техмодерка")  # видят новый канал
     old_mods: tuple = ("Модератор чата",)  # видят старый
     welcome_bots: tuple = ("carl-bot", "WikiAuthBot2", "Apparitor")
     apparitor: str = "Apparitor"
@@ -205,7 +205,7 @@ class Spec:
         "1569522756142502030",
     )  # readme, announcements, server-hub
     roles_channel: str = "768773664949927946"
-    new_name: str = "welcome"
+    new_name: str = "lobby"  # решение хозяина: не welcome, чтобы не путать со старым
     # какие роли ботов сохраняют просмотр там, где @everyone его теряет (бот пишет в канале): канал -> имена ролей.
     # Остальные боты просмотр потеряют — их список печатает plan. Ставим на роль бота, не на участника.
     bot_view: dict = field(
@@ -351,7 +351,7 @@ class Planner:
         sp = self.spec
         ver, new, app = self.role(sp.verified), self.role(sp.newbie), self.role(sp.apparitor)
         o = sp.old_welcome
-        self.edit(o, sp.guild_id, why="старый #welcome → архив: @everyone не видит", deny_add=VIEW)
+        self.edit(o, sp.guild_id, why="старый #welcome скрыт от непроверенных: @everyone не видит", deny_add=VIEW)
         self.edit(o, ver, why="проверенные видят, писать нельзя", allow_add=VIEW | HISTORY, deny_add=SEND)
         for n in sp.old_mods:
             self.edit(o, self.role(n), why="модераторы видят", allow_add=VIEW)
@@ -391,7 +391,9 @@ class Planner:
     def tail_ops(self) -> None:
         sp = self.spec
         if self.opts.system_channel and self.snap.guild.get("system_channel_id") == sp.old_welcome:
-            self.ops.append(Op("system", "системный канал → новый #welcome", before=[sp.old_welcome], after=[NEW]))
+            self.ops.append(
+                Op("system", f"системный канал → новый #{sp.new_name}", before=[sp.old_welcome], after=[NEW])
+            )
         if self.opts.rename_old:
             old = self.snap.chan(sp.old_welcome)
             self.ops.append(
@@ -406,7 +408,7 @@ class Planner:
 
 
 def build(snap: Snap, spec: Spec, opts: Opts) -> Planner:
-    """Порядок: роль бота и новый #welcome (новичкам есть куда идти) → просмотр ботам → скрытие → системный канал."""
+    """Порядок: роль бота и новый канал (новичкам есть куда идти) → просмотр ботам → скрытие → системный канал."""
     g = set(opts.groups)
     p = Planner(snap, spec, opts)
     if "position" in g:
@@ -721,7 +723,7 @@ def cmd_plan(a, d: Path, out=print) -> Planner:
 
 
 def welcome_snippet(spec: Spec, new_id: str) -> str:
-    """Правка конфига: приветствие Apparitor в новом #welcome (Carl и WikiAuthBot2 пишут в старый до переключения)."""
+    """Правка конфига: приветствие Apparitor в новом канале (Carl и WikiAuthBot2 пишут в старый до переключения)."""
     return (
         "Правка config.toolforge.toml (сам файл скрипт не меняет), затем влить и выкатить:\n"
         f"  [guild.{spec.guild_id}]\n"
@@ -791,7 +793,7 @@ def main(argv=None) -> int:
     ap.add_argument("--groups", default="wall,roles,position", help=f"из: {', '.join(GROUPS)}")
     ap.add_argument("--apparitor-position", type=int, default=49)
     ap.add_argument(
-        "--system-channel", action="store_true", help="перенести системный канал в новый #welcome (по умолчанию нет)"
+        "--system-channel", action="store_true", help="перенести системный канал в новый канал (по умолчанию нет)"
     )
     ap.add_argument("--rename-old", help="переименовать старый #welcome (по умолчанию имя не трогаем)")
     ap.add_argument(
