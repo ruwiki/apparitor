@@ -32,6 +32,8 @@ SCHEMA = {
                   primary key (guild_id, discord_id))""",
     "sticky_roles": """(guild_id bigint not null, discord_id bigint not null, roles text not null,
                          left_at varchar(20) not null, primary key (guild_id, discord_id))""",
+    "board": """(guild_id bigint not null, message_id bigint primary key, line_id bigint not null,
+                 forward_id bigint not null, stars int not null, posted_at varchar(20) not null)""",
     "gate_told": """(discord_id bigint primary key, digest varchar(32) not null, at varchar(20) not null)""",
     "log": """(id integer primary key {autoinc}, ts varchar(20), actor varchar(32), action varchar(32),
                target varchar(255), detail text)""",
@@ -248,6 +250,23 @@ class Store:
     async def sticky_purge(self, guild_id: int, older_than: str) -> None:
         """Записи старше срока (метка времени того же формата, сортируется как строка)."""
         await self._run(self._exec, "delete from sticky_roles where guild_id=? and left_at<?", (guild_id, older_than))
+
+    # --- доска лучших сообщений ------------------------------------------------------------
+    async def board_get(self, message_id: int) -> tuple[int, int, int] | None:
+        """(строка счётчика, пересылка, звёзд) для уже опубликованного сообщения."""
+        r = await self._run(
+            lambda: self._exec(
+                "select line_id, forward_id, stars from board where message_id=?", (message_id,)
+            ).fetchone()
+        )
+        return r and (int(r[0]), int(r[1]), int(r[2]))
+
+    async def board_set(self, guild_id: int, message_id: int, line_id: int, forward_id: int, stars: int) -> None:
+        await self._run(
+            self._exec,
+            self._upsert_sql("board", "guild_id, message_id, line_id, forward_id, stars, posted_at", 6),
+            (guild_id, message_id, line_id, forward_id, stars, now_ts()),
+        )
 
     # --- реакции и выход из каналов ------------------------------------------------
     async def add_reaction(self, guild_id: int, message_id: int, emoji: str, action: str, target: int) -> None:

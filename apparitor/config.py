@@ -27,7 +27,7 @@ def read_token() -> str:
 
 # Функции, которые бот перенимает у Carl-bot. Ключа нет — функция выключена; dry — только отчёты, сверка с Carl;
 # live — действует. Режим функции не зависит от dry_run сервера: dry_run = true остаётся для остального бота.
-FEATURES = ("welcome", "farewell", "join_roles", "sticky_roles", "reaction_roles")
+FEATURES = ("welcome", "farewell", "join_roles", "sticky_roles", "reaction_roles", "starboard")
 MODES = ("dry", "live")
 
 
@@ -67,6 +67,12 @@ class GuildCfg:
     sticky_days: int = 730  # сколько хранить роли ушедшего для возврата при повторном входе
     sticky_skip: list[str] = field(default_factory=list)  # роли, которые не возвращаются никогда (имена)
     reaction_roles: dict[str, dict[str, str]] = field(default_factory=dict)  # id сообщения -> эмодзи -> имя роли
+    board_channel_id: int = 0  # доска лучших сообщений (замена Starboard); 0 = нет
+    board_emoji: str = "⭐"
+    board_threshold: int = 7  # сколько звёзд нужно для публикации (по данным доски Starboard: минимум 7)
+    board_sources: list[int] = field(default_factory=list)  # откуда берём: каналы…
+    board_categories: list[int] = field(default_factory=list)  # …и категории; только открытые
+    board_self_star: bool = False  # считать ли звезду автора
     reaction_require: dict[str, list[str]] = field(default_factory=dict)  # id сообщения -> роли, одна из которых нужна
 
 

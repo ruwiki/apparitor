@@ -11,6 +11,7 @@ import discord
 from discord import app_commands
 
 from . import rules
+from .board import Board
 from .config import Config, GuildCfg
 from .gate import Gate
 from .joins import Joins
@@ -35,6 +36,7 @@ class Apparitor(discord.Client):
         self.gate = Gate(self)
         self.rooms = Rooms(self)
         self.joins = Joins(self)
+        self.board = Board(self)
         self._tasks: set[asyncio.Task] = set()
 
     # --- жизненный цикл ----------------------------------------------------------
@@ -60,9 +62,11 @@ class Apparitor(discord.Client):
 
     async def on_raw_reaction_add(self, p: discord.RawReactionActionEvent):
         await self.rooms.reaction(p, True)
+        await self.board.reaction(p)
 
     async def on_raw_reaction_remove(self, p: discord.RawReactionActionEvent):
         await self.rooms.reaction(p, False)
+        await self.board.reaction(p)
 
     async def on_message(self, m: discord.Message):
         await self.rooms.message(m)
