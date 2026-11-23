@@ -20,6 +20,20 @@ remove_on_confirm = ["🆕 new user"]
 gate_watch = true                         # непроверенных искать в WikiAuthBot (ключ WIKIAUTHBOT_KEY_223183550965481473)
 roles_channel_id = 768773664949927946     # #roles: здесь сообщения бота с реакциями
 optout_channels = [353333123381067777, 778916107893473310]   # #readme, #announcements: выход реакцией 📭, сообщения в личку
+welcome_channel_id = 728220635905523782    # #welcome; после перестройки прав — новый канал
+welcome_text = '''<:wikipetan:330603892725252096> Добро пожаловать в чат сообщества Викимедиа!
+{mention}, пожалуйста, сообщите ваш никнейм в Википедии.
+
+<:logo:330789827559817229> Верифицировать (подтвердить) вашу учётную запись Википедии вы можете через бота или связавшись с модераторами чата.
+
+<:puzzle:330791376989978624> Если вы новый участник и у вас есть краткий вопрос — смело задавайте его, здесь постараются помочь и ответить!
+
+:red_circle: Заметьте, что для доступа к серверу у вас должен быть флаг автопатрулируемого (см. ВП:АПАТ), либо год стажа и более ста правок.'''
+farewell_texts = ["возвращайся!", "будем ждать!", "мы уже заскучали!", "приходи ещё!", "удачи!"]
+join_roles = ["🆕 new user"]               # Carl выдаёт через 240 с после входа (журнал аудита: 8 из 8 с известным входом)
+join_delay = 240                           # 0 = сразу; решение хозяина, пока повторяем Carl
+sticky_days = 730
+sticky_skip = ["+👮 #admins", "+👮 #wikibooks", "+👮 #wikidata", "+👮 #wikinews", "+👮 #wikisource", "+👮 #wiktionary", "+👮 #tech", "+👮 #copyright", "+👮 #voice", "#admins", "#requests-fast", "+👮 emoji"]   # чёрный список возврата Carl (autoroles.json, 12 из 14: две роли удалены)
 [guild.223183550965481473.admit]          # правило из приветствия в #welcome: АПАТ либо год стажа и более ста правок
 min_edits = 101
 min_age_days = 365
@@ -40,6 +54,71 @@ closer = "Подводящий итоги"
 closer-plus = "Полномочный подводящий итоги"   # статус из JSON гаджета markadmins (ПИ+)
 vrts = ""                                     # роль VRT на сервере есть; вести ли её ботом — решение владельца
 steward = "Стюард"
+
+# --- Функции Carl-bot (замена, 23.11.2026). Ключа нет — выключено; dry — отчёт + сверка с Carl; live — действует.
+# farewell выключен: Carl пишет прощание в #welcome, а после перестройки прав там новички — ник ушедшего им не показывать.
+# Включить = задать farewell_channel_id (например #moderbot) и features.farewell.
+[guild.223183550965481473.features]
+welcome = "dry"
+join_roles = "dry"
+sticky_roles = "dry"
+reaction_roles = "dry"
+
+# белый список сообщения: реакция работает только у держателей одной из ролей (у Carl так на сообщении подписок)
+[guild.223183550965481473.reaction_require]
+"849976979155451925" = ["✔"]
+
+
+# сообщение Carl-bot в #roles; таблица из дашборда Carl (reactionroles.json, 23.11.2026)
+[guild.223183550965481473.reaction_roles."849976979155451925"]
+"📊" = "votings subscribe"
+"📣" = "announcements subscribe"
+
+# сообщение 977685671152074762 в канале 768085720396464148, которого на сервере нет: не переносим
+
+# сообщение Carl-bot в #roles; таблица из дашборда Carl (reactionroles.json, 23.11.2026)
+[guild.223183550965481473.reaction_roles."977692093201907773"]
+"🛰" = "#requests-fast"
+"🎦" = "#pro-cinema"
+"⛰" = "#pro-ural"
+"🎮" = "#pro-games"
+"🎵" = "#pro-music"
+"🏃" = "#pro-sport"
+"📈" = "#pro-growth"
+"📘" = "#pro-books"
+"📜" = "#pro-academy"
+"🔗" = "#pro-connectivity"
+"🔣" = "#translatewiki"
+"🔢" = "#pro-math"
+"🎙" = "#voice"
+"🇲" = "#pro-myriad"
+"🇺🇦" = "+ ukredits"
+"232142398921113601" = "#pro-quality"
+"🧑‍🍳" = "#pro-cooking"
+"⚛" = "#pro-science"
+
+# сообщение Carl-bot в #roles; таблица из дашборда Carl (reactionroles.json, 23.11.2026)
+[guild.223183550965481473.reaction_roles."980959003406397470"]
+"💢" = "💢 No reply pings"
+"✅" = "✅ Ping me"
+"❌" = "❌ Do not ping me"
+
+# сообщение Carl-bot в #roles; таблица из дашборда Carl (reactionroles.json, 23.11.2026)
+[guild.223183550965481473.reaction_roles."1017476950408835182"]
+"🗣" = "+ #general"
+"©" = "+ #copyright"
+"768759004683829248" = "+ #wiktionary"
+"🔖" = "+ #wikisource"
+"330789827559817229" = "+ #wikipedia"
+"📰" = "+ #wikinews"
+"768093011702710323" = "+ #wikidata"
+"📚" = "+ #wikibooks"
+"👼" = "+ #offtopic"
+"🇦" = "all"
+"⚙" = "+ #tech"
+"📢" = "+ #offtopic"
+"🎭" = "+ #memes"
+"🗺" = "+ #international"
 
 # --- Русская Википедия ---
 [guild.1044474820089368666]

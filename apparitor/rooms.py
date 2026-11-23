@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from typing import TYPE_CHECKING
 
 import discord
@@ -20,6 +21,14 @@ HEADER = "Новые каналы: поставьте реакцию — вой�
 BACKFILL_LIMIT = 30  # при выходе из канала прислать его целиком, если сообщений не больше (readme)
 
 
+def plain(emoji: str) -> str:
+    """Ключ эмодзи для сравнения: у своего — без селектора варианта U+FE0F (Discord отдаёт то с ним, то без),
+    у кастомного — его id (в выгрузке Carl-bot кастомные записаны id, у события — как <:имя:id>)."""
+    if m := re.fullmatch(r"<a?:\w+:(\d+)>", emoji):
+        return m.group(1)
+    return emoji.replace("\ufe0f", "")
+
+
 class Rooms:
     def __init__(self, bot: Apparitor):
         self.bot = bot
@@ -27,7 +36,8 @@ class Rooms:
 
     async def ours(self) -> set[int]:
         if self._ours is None:
-            ids: set[int] = set()
+            # сообщения Carl-bot из конфига (reaction_roles) и сообщения самого бота из БД
+            ids: set[int] = {int(m) for g in self.bot.cfg.guild.values() for m in g.reaction_roles}
             for gid in self.bot.cfg.guilds:
                 ids |= {m for m, *_ in await self.bot.store.reactions_of(gid)}
             self._ours = ids
@@ -116,6 +126,9 @@ class Rooms:
             return
         if p.message_id not in await self.ours():
             return
+        if (table := self.bot.gcfg(p.guild_id).reaction_roles.get(str(p.message_id))) is not None:
+            await self.config_reaction(p, added, table)
+            return
         act = await self.bot.store.reaction(p.message_id, str(p.emoji))
         if not act:
             return
@@ -138,6 +151,40 @@ class Rooms:
                 await member.remove_roles(role, reason="Apparitor: выход по реакции")
         elif action == "optout":
             await self.optout(member, added, p)
+
+    async def config_reaction(self, p: discord.RawReactionActionEvent, added: bool, table: dict[str, str]) -> None:
+        """Роли по реакциям на сообщениях, которые ведёт Carl-bot: таблица эмодзи → роль в конфиге."""
+        gid = p.guild_id
+        mode = self.bot.feature(gid, "reaction_roles")
+        name = {plain(k): v for k, v in table.items()}.get(plain(str(p.emoji)))
+        if mode == "off" or not name:
+            return
+        member = p.member or await self.bot.member(gid, p.user_id)
+        if not member or member.bot:
+            return
+        need = self.bot.gcfg(gid).reaction_require.get(str(p.message_id))
+        denied = added and need and not any(r.name in need for r in member.roles)  # белый список сообщения
+        found = [r for r in member.guild.roles if r.name == name]
+        if len(found) != 1:
+            await self.bot.report(
+                gid, f"Реакция {p.emoji}: ролей с именем «{name}» на сервере {len(found)}, нужна одна."
+            )
+            return
+        if mode == "dry":
+            verb = "выдал бы" if added else "снял бы"
+            if denied:
+                verb = f"не выдал бы (нужна одна из: {', '.join(need)}); роль"
+            label = f"реакция {p.emoji} {member.mention}: {verb} «{name}»"
+            want_in, want_out = (
+                ({name}, set()) if added and not denied else (set(), {name})
+            )  # отказ = роли быть не должно
+            self.bot.spawn(self.bot.parity(member.id, gid, label, want_in, want_out, self.bot.joins.PARITY_DELAY))
+        elif denied:
+            return  # убрать чужую реакцию без права Manage Messages нельзя; роль просто не выдаём
+        elif added:
+            await member.add_roles(found[0], reason="Apparitor: вход по реакции")
+        else:
+            await member.remove_roles(found[0], reason="Apparitor: выход по реакции")
 
     async def optout(self, member: discord.Member, on: bool, p: discord.RawReactionActionEvent | None = None) -> None:
         g = self.bot.gcfg(member.guild.id)

@@ -25,6 +25,12 @@ def read_token() -> str:
     return token
 
 
+# Функции, которые бот перенимает у Carl-bot. Ключа нет — функция выключена; dry — только отчёты, сверка с Carl;
+# live — действует. Режим функции не зависит от dry_run сервера: dry_run = true остаётся для остального бота.
+FEATURES = ("welcome", "farewell", "join_roles", "sticky_roles", "reaction_roles")
+MODES = ("dry", "live")
+
+
 @dataclass
 class Admit:
     """Критерии впуска; 0 = не проверять."""
@@ -50,6 +56,17 @@ class GuildCfg:
     roles_channel_id: int = 0  # канал, где бот держит своё сообщение с реакциями
     track_categories: dict[str, str] = field(default_factory=dict)  # id категории -> префикс роли нового канала
     optout_channels: list[int] = field(default_factory=list)  # из них можно выйти реакцией, сообщения — в личку
+    features: dict[str, str] = field(default_factory=dict)  # функция -> dry | live; нет ключа = выключена
+    welcome_channel_id: int = 0  # куда писать приветствие и прощание
+    welcome_text: str = ""  # {mention} — упоминание вошедшего
+    farewell_channel_id: int = 0  # куда писать прощание; 0 = никуда (в #welcome ник ушедшего увидят новички)
+    join_delay: int = 0  # через сколько секунд после входа выдавать join_roles (Carl-bot делает это через 240 с)
+    farewell_texts: list[str] = field(default_factory=list)  # варианты прощания, выбирается случайный
+    join_roles: list[str] = field(default_factory=list)  # роли при входе («🆕 new user»)
+    sticky_days: int = 730  # сколько хранить роли ушедшего для возврата при повторном входе
+    sticky_skip: list[str] = field(default_factory=list)  # роли, которые не возвращаются никогда (имена)
+    reaction_roles: dict[str, dict[str, str]] = field(default_factory=dict)  # id сообщения -> эмодзи -> имя роли
+    reaction_require: dict[str, list[str]] = field(default_factory=dict)  # id сообщения -> роли, одна из которых нужна
 
 
 @dataclass
@@ -65,6 +82,10 @@ class Config:
     def for_guild(self, guild_id: int) -> GuildCfg:
         """Нет секции — пустая: ролей нет, служебного канала нет; команды отвечают только спросившему."""
         return self.guild.get(guild_id) or GuildCfg()
+
+    def feature(self, guild_id: int, name: str) -> str:
+        """off | dry | live."""
+        return self.for_guild(guild_id).features.get(name, "off")
 
     def admit_for(self, guild_id: int) -> Admit:
         return self.for_guild(guild_id).admit or self.admit
@@ -86,6 +107,9 @@ def _guild(raw: dict, where: str) -> GuildCfg:
     raw = dict(raw)
     admit = raw.pop("admit", None)
     g = _section(GuildCfg, raw, where)
+    for k, v in g.features.items():
+        if k not in FEATURES or v not in MODES:
+            raise SystemExit(f"конфиг, {where}.features: {k} = {v!r}; функции {FEATURES}, режимы {MODES}")
     if admit is not None:
         g.admit = _section(Admit, admit, f"{where}.admit")
     return g

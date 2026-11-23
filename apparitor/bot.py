@@ -12,6 +12,7 @@ from discord import app_commands
 from . import rules
 from .config import Config, GuildCfg
 from .gate import Gate
+from .joins import Joins
 from .models import Decision, UserInfo, Verdict, listed
 from .rooms import Rooms
 from .ruwiki import RuWiki
@@ -32,6 +33,7 @@ class Apparitor(discord.Client):
         self.wiki = RuWiki()  # HTTP-сессию заводит сам при первом запросе: OAuth-колбэк может прийти до Discord
         self.gate = Gate(self)
         self.rooms = Rooms(self)
+        self.joins = Joins(self)
         self._tasks: set[asyncio.Task] = set()
 
     # --- жизненный цикл ----------------------------------------------------------
@@ -63,6 +65,14 @@ class Apparitor(discord.Client):
 
     async def on_message(self, m: discord.Message):
         await self.rooms.message(m)
+
+    async def on_member_join(self, m: discord.Member):
+        if m.guild.id in self.cfg.guilds:
+            await self.joins.joined(m)
+
+    async def on_member_remove(self, m: discord.Member):
+        if m.guild.id in self.cfg.guilds:
+            await self.joins.left(m)
 
     async def sync_guild(self, gid: int) -> bool:
         """Команды на сервер; бота там может ещё не быть — тогда предупреждение, не падение."""
@@ -103,6 +113,46 @@ class Apparitor(discord.Client):
 
     def gcfg(self, guild_id: int) -> GuildCfg:
         return self.cfg.for_guild(guild_id)
+
+    def feature(self, guild_id: int, name: str) -> str:
+        """off | dry | live — режим функции, перенятой у Carl-bot (см. config.FEATURES)."""
+        return self.cfg.feature(guild_id, name)
+
+    def spawn(self, coro) -> None:
+        """Фоновая задача с жёсткой ссылкой: без неё asyncio может собрать её до завершения."""
+        task = asyncio.create_task(coro)
+        self._tasks.add(task)
+        task.add_done_callback(self._tasks.discard)
+
+    async def parity(
+        self,
+        member_id: int,
+        guild_id: int,
+        label: str,
+        want_in: set[str],
+        want_out: set[str],
+        delay: float,
+        unexpected: set[str] = frozenset(),
+    ) -> None:
+        """Холостой режим: через delay секунд сверить роли участника с тем, что бот сделал бы. Carl-bot действует
+        на самом деле, так что расхождение — это либо ошибка бота, либо правило, которого бот не знает.
+        unexpected — роли, которые бот сознательно не выдаёт (права управления): если Carl их вернул, скажем."""
+        await asyncio.sleep(delay)
+        m = await self.member(guild_id, member_id)
+        if not m:
+            await self.report(guild_id, f"[холостой] {label} — участник уже вышел, сверить нельзя.")
+            return
+        have = {r.name for r in m.roles}
+        missing, stray, extra = sorted(want_in - have), sorted(want_out & have), sorted(unexpected & have)
+        problems = []
+        if missing:
+            problems.append(f"Carl не выдал {listed(missing)}")
+        if stray:
+            problems.append(f"Carl не снял {listed(stray)}")
+        verdict = "РАСХОЖДЕНИЕ: " + "; ".join(problems) if problems else "совпало с Carl"
+        if extra:
+            verdict += f"; Carl вернул то, что бот не вернул бы: {listed(extra)}"
+        await self.report(guild_id, f"[холостой] {label} — {verdict}.")
 
     async def member(self, guild_id: int, discord_id: int) -> discord.Member | None:
         g = self.get_guild(guild_id)

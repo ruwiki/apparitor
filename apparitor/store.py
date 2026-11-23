@@ -30,6 +30,8 @@ SCHEMA = {
                      action varchar(16) not null, target bigint not null, primary key (message_id, emoji))""",
     "optout": """(guild_id bigint not null, discord_id bigint not null, since varchar(20) not null,
                   primary key (guild_id, discord_id))""",
+    "sticky_roles": """(guild_id bigint not null, discord_id bigint not null, roles text not null,
+                         left_at varchar(20) not null, primary key (guild_id, discord_id))""",
     "gate_told": """(discord_id bigint primary key, digest varchar(32) not null, at varchar(20) not null)""",
     "log": """(id integer primary key {autoinc}, ts varchar(20), actor varchar(32), action varchar(32),
                target varchar(255), detail text)""",
@@ -216,6 +218,36 @@ class Store:
             self._upsert_sql("gate_told", "discord_id, digest, at", 3),
             (discord_id, digest, now_ts()),
         )
+
+    # --- роли ушедшего участника: вернуть при повторном входе ---------------------------------
+    async def sticky_save(self, guild_id: int, discord_id: int, role_ids: list[int]) -> None:
+        if not role_ids:
+            await self._run(
+                self._exec, "delete from sticky_roles where guild_id=? and discord_id=?", (guild_id, discord_id)
+            )
+            return
+        await self._run(
+            self._exec,
+            self._upsert_sql("sticky_roles", "guild_id, discord_id, roles, left_at", 4),
+            (guild_id, discord_id, ",".join(map(str, role_ids)), now_ts()),
+        )
+
+    async def sticky_get(self, guild_id: int, discord_id: int) -> list[int]:
+        r = await self._run(
+            lambda: self._exec(
+                "select roles from sticky_roles where guild_id=? and discord_id=?", (guild_id, discord_id)
+            ).fetchone()
+        )
+        return [int(x) for x in r[0].split(",")] if r and r[0] else []
+
+    async def sticky_delete(self, guild_id: int, discord_id: int) -> None:
+        await self._run(
+            self._exec, "delete from sticky_roles where guild_id=? and discord_id=?", (guild_id, discord_id)
+        )
+
+    async def sticky_purge(self, guild_id: int, older_than: str) -> None:
+        """Записи старше срока (метка времени того же формата, сортируется как строка)."""
+        await self._run(self._exec, "delete from sticky_roles where guild_id=? and left_at<?", (guild_id, older_than))
 
     # --- реакции и выход из каналов ------------------------------------------------
     async def add_reaction(self, guild_id: int, message_id: int, emoji: str, action: str, target: int) -> None:
