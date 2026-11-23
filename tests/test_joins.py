@@ -110,10 +110,18 @@ def set_mode(bot, **modes):
     bot.cfg.guild[GUILD].features.update(modes)
 
 
+EXTRA = (
+    ":link: Подтвердить учётную запись можно командой `/auth` (бот WikiAuthBot) или `/login` (бот Apparitor): "
+    "обе связывают вашу учётную запись Википедии с Discord."
+)
+
+
 def test_texts_match_carl_verbatim():
-    """Приветствие в конфиге — буква в букву сообщение Carl-bot из #welcome; прощание — его embed."""
+    """Приветствие — сообщение Carl-bot буква в букву плюс строка про /auth и /login; прощание — embed Carl."""
     g = load_config("config.toolforge.toml").guild[GUILD]
-    assert g.welcome_text.replace("{mention}", "<@1>") == (FIX / "carl_welcome.txt").read_text(encoding="utf-8")
+    assert EXTRA in g.welcome_text  # единственное отличие от Carl: подсказка про /auth и /login
+    carl = g.welcome_text.replace(EXTRA + "\n\n", "").replace("{mention}", "<@1>")
+    assert carl == (FIX / "carl_welcome.txt").read_text(encoding="utf-8")
     emb = json.loads((FIX / "carl_farewell.json").read_text(encoding="utf-8"))
     m = make_member(make_guild())
     phrase = emb["description"].split(",  ", 1)[1]
