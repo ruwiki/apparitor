@@ -17,11 +17,11 @@ reject_blocked = true
 report_channel_id = 995099313648701600   # #moderbot — только модераторы
 report_names = true                       # закрытый канал: в отчёте связка ник ↔ вики-аккаунт
 remove_on_confirm = ["🆕 new user"]
-commands = ["status", "sync", "link", "audit"]   # /login, /verify, /confirm здесь не регистрируем: проверку даёт /auth WikiAuthBot2
+commands = ["login", "verify", "confirm", "status", "sync", "link", "audit"]   # подтверждение — у нашего бота (/login, /verify + /confirm)
 gate_watch = true                         # непроверенных искать в WikiAuthBot (ключ WIKIAUTHBOT_KEY_223183550965481473)
 import_links = true                       # связки всех участников из WikiAuthBot в свою БД (запись только в БД бота)
 roles_channel_id = 768773664949927946     # #roles: здесь сообщения бота с реакциями
-optout_channels = [353333123381067777, 778916107893473310]   # #readme, #announcements: строка «− #канал — выйти» в #roles, сообщения в личку
+optout_channels = [353333123381067777, 778916107893473310]   # #readme, #announcements: отдельный пост со строками выхода в #roles (features.optout), сообщения в личку
 optout_emoji = {"353333123381067777" = "🚪", "778916107893473310" = "🔕"}   # реакции строк выхода (у Carl не заняты)
 welcome_channel_id = 1574478408786649158    # #lobby (создан стеной прав 23.11.2026); старый #welcome остаётся Carl и WikiAuthBot2
 welcome_text = '''<:wikipetan:330603892725252096> Добро пожаловать в чат сообщества Викимедиа!
@@ -29,7 +29,7 @@ welcome_text = '''<:wikipetan:330603892725252096> Добро пожаловат�
 
 <:logo:330789827559817229> Верифицировать (подтвердить) вашу учётную запись Википедии вы можете через бота или связавшись с модераторами чата.
 
-:link: Подтвердить учётную запись можно командой `/auth` (бот WikiAuthBot): она связывает вашу учётную запись Википедии с Discord.
+:link: Подтвердите учётную запись Википедии командой `/login` (бот Apparitor) — вход через Мету. Без входа: `/verify`, затем `/confirm`.
 
 <:puzzle:330791376989978624> Если вы новый участник и у вас есть краткий вопрос — смело задавайте его, здесь постараются помочь и ответить!
 
@@ -70,8 +70,12 @@ steward = "Стюард"
 # --- Функции Carl-bot (замена, 23.11.2026). Ключа нет — выключено; dry — отчёт + сверка с Carl; live — действует.
 # farewell выключен: Carl пишет прощание в #welcome, а после перестройки прав там новички — ник ушедшего им не показывать.
 # Включить = задать farewell_channel_id (например #moderbot) и features.farewell.
+# optout и admit — не у Carl: optout = пост выхода из каналов в #roles и пересылка в личку; admit = роли тому, кто сам
+# подтвердил аккаунт через /login или /confirm (✔ по правилу впуска, снимается только 🆕). Обход gate и /sync — по dry_run.
 [guild.223183550965481473.features]
 welcome = "live"
+optout = "live"
+admit = "live"
 join_roles = "dry"
 sticky_roles = "dry"
 reaction_roles = "dry"

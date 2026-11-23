@@ -27,7 +27,9 @@ def read_token() -> str:
 
 # Функции, которые бот перенимает у Carl-bot. Ключа нет — функция выключена; dry — только отчёты, сверка с Carl;
 # live — действует. Режим функции не зависит от dry_run сервера: dry_run = true остаётся для остального бота.
-FEATURES = ("welcome", "farewell", "join_roles", "sticky_roles", "reaction_roles", "starboard")
+# Две функции — не у Carl: optout (строки выхода из каналов в #roles, пересылка в личку) и admit (роли тому, кто сам
+# подтвердил аккаунт через /login или /confirm; ключа нет — решает dry_run сервера; обход gate и /sync остаются на нём).
+FEATURES = ("welcome", "farewell", "join_roles", "sticky_roles", "reaction_roles", "starboard", "optout", "admit")
 MODES = ("dry", "live")
 
 

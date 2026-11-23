@@ -131,6 +131,11 @@ class Apparitor(discord.Client):
     def gcfg(self, guild_id: int) -> GuildCfg:
         return self.cfg.for_guild(guild_id)
 
+    def dry_admit(self, guild_id: int) -> bool:
+        """Холостой ли впуск сам подтвердившему аккаунт (/login, /confirm): features.admit, нет ключа — dry_run."""
+        mode = self.cfg.for_guild(guild_id).features.get("admit")
+        return self.dry(guild_id) if mode is None else mode != "live"
+
     def feature(self, guild_id: int, name: str) -> str:
         """off | dry | live — режим функции, перенятой у Carl-bot (см. config.FEATURES)."""
         return self.cfg.feature(guild_id, name)
@@ -208,11 +213,17 @@ class Apparitor(discord.Client):
 
     # --- решение по участнику ---------------------------------------------------------
     async def evaluate(
-        self, member: discord.Member, info: UserInfo | None, wiki_name: str, quiet: bool = False
+        self,
+        member: discord.Member,
+        info: UserInfo | None,
+        wiki_name: str,
+        quiet: bool = False,
+        self_confirmed: bool = False,
     ) -> Verdict:
         """Единая точка: критерии впуска → выдача ролей; снимается только 🆕 при впуске, остальное — строка модераторам.
         Вызывается из /confirm, /link, OAuth-колбэка, /sync и обхода новичков (quiet: без строки на каждого
-        в служебный канал — обход шлёт сводку сам)."""
+        в служебный канал — обход шлёт сводку сам). self_confirmed — человек сам доказал аккаунт (/login, /confirm):
+        режим тогда features.admit, у остальных путей — dry_run сервера."""
         gid = member.guild.id
         if not info:
             shown = f" ({wiki_name})" if self.gcfg(gid).report_names else ""
@@ -220,7 +231,8 @@ class Apparitor(discord.Client):
                 await self.report(gid, f"{member.mention}: в рувики нет такого участника{shown}")
             return Verdict(f"В рувики нет участника {wiki_name}.", notable=True)
         d = rules.decide(self.cfg.admit_for(gid), self.gcfg(gid), info, {r.name for r in member.roles})
-        missing = await self.apply(member, info, d, quiet)
+        dry = self.dry_admit(gid) if self_confirmed else self.dry(gid)
+        missing = await self.apply(member, info, d, quiet, dry)
         mods = self.mods_line(d)
         if not d.ok:
             await self.store.log(str(member.id), "reject", info.name, d.why)
@@ -228,7 +240,7 @@ class Apparitor(discord.Client):
         roles = f"выдать {listed(d.add)}, снять {listed(d.remove)}" + (
             f", на сервере нет {listed(missing)}" if missing else ""
         )
-        if self.dry(gid):
+        if dry:
             if quiet:  # строку в служебный канал шлёт вызывающий: «отчёт в служебном канале» было бы дублем
                 return Verdict(f"роли не менялись, было бы: {roles}.", d.changes, mods=mods)
             return Verdict(
@@ -243,10 +255,12 @@ class Apparitor(discord.Client):
         """Что правило сняло бы с выданного людьми: бот этого не делает никогда, решают модераторы."""
         return f"по правилу снял бы {listed(d.would_remove)} — решают модераторы" if d.would_remove else ""
 
-    async def apply(self, member: discord.Member, info: UserInfo, d: Decision, quiet: bool = False) -> list[str]:
+    async def apply(
+        self, member: discord.Member, info: UserInfo, d: Decision, quiet: bool = False, dry: bool | None = None
+    ) -> list[str]:
         """Применяет решение (или только отчитывается вхолостую). Возвращает имена ролей, которых нет на сервере."""
         guild = member.guild
-        dry = self.dry(guild.id)
+        dry = self.dry(guild.id) if dry is None else dry
         add = [discord.utils.get(guild.roles, name=n) for n in d.add]
         missing = [n for n, r in zip(d.add, add, strict=True) if r is None]
         add = [r for r in add if r is not None]
@@ -278,4 +292,4 @@ class Apparitor(discord.Client):
         if not m:
             return "Вас нет на сервере Discord, роли выдать некому."
         info = await self.wiki.user_info(wiki_name)
-        return (await self.evaluate(m, info, wiki_name)).text
+        return (await self.evaluate(m, info, wiki_name, self_confirmed=True)).text

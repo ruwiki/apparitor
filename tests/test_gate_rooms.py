@@ -120,8 +120,9 @@ async def test_reaction_dry_run_only_reports(bot):
     assert "снял бы «all»" in out[-1]
 
 
-async def test_optout_dry_run_only_reports(bot):
+async def test_optout_dry_only_reports(bot):
     out = capture(bot)
+    bot.cfg.guild[GUILD].features["optout"] = "dry"
     readme = bot.gcfg(GUILD).optout_channels[0]
     await bot.store.add_reaction(GUILD, 124, "🚪", "optout", readme)
     m = fake_member()
@@ -131,7 +132,8 @@ async def test_optout_dry_run_only_reports(bot):
     assert await bot.store.optouts(GUILD, readme) == []  # и в БД выход не записан
 
 
-async def test_forward_dry_run_does_nothing(bot, monkeypatch):
+async def test_forward_dry_does_nothing(bot, monkeypatch):
+    bot.cfg.guild[GUILD].features["optout"] = "dry"
     ch = bot.gcfg(GUILD).optout_channels[0]
     await bot.store.set_optout(GUILD, ch, 7, True)
 

@@ -1,7 +1,8 @@
 """Каналы по реакциям на сообщениях бота: новые каналы отслеживаемых категорий получают роль доступа и
-строку с реакцией; в том же сообщении по строке «− #канал: поставьте реакцию — выйти…» на каждый
-optout-канал (readme, announcements): реакция прячет канал (запрет на участника), его новые сообщения
-бот пересылает в личку. Пересылка — штатная пересылка Discord (forward): текст сообщений боту читать не нужно."""
+строку с реакцией (режим — dry_run сервера). Отдельным сообщением со своей шапкой — строки выхода на каждый
+optout-канал (readme, announcements; режим — features.optout): реакция прячет канал (запрет на участника),
+его новые сообщения бот пересылает в личку. Пересылка — штатная пересылка Discord (forward): текст
+сообщений боту читать не нужно."""
 
 from __future__ import annotations
 
@@ -20,6 +21,7 @@ POOL = [chr(0x1F1E6 + i) for i in range(26)]  # 🇦…🇿 — реакции �
 PER_MESSAGE = 20  # предел реакций Discord на одно сообщение
 OPTOUT_POOL = ["🚪", "🔕", "📤", "🛑"]  # строки выхода, если эмодзи канала не задан в конфиге; не заняты у Carl
 HEADER = "Каналы: поставьте реакцию — войти, снимите — выйти."
+OPTOUT_HEADER = "Подписка в личку: выйти из канала и получать его новые сообщения от бота в личные сообщения"
 BACKFILL_LIMIT = 30  # при выходе из канала прислать его целиком, если сообщений не больше (readme)
 
 
@@ -38,6 +40,7 @@ class Rooms:
         self._latest: dict[tuple[int, int, str], bool] = {}  # (сообщение, участник, эмодзи) -> реакция сейчас стоит
         self._entries = asyncio.Lock()  # строки в сообщении бота дописываются по одной
         self._told: set[int] = set()  # серверы, где холостой отчёт про строки выхода уже был
+        self._optout_lock = asyncio.Lock()  # on_ready бывает несколько раз: пост выхода не должен задвоиться
 
     async def ours(self) -> set[int]:
         if self._ours is None:
@@ -80,8 +83,10 @@ class Rooms:
         emoji = await self.add_entry(ch.guild, f"{ch.mention}", "role", role.id)
         await self.bot.report(gid, f"Новый канал {ch.mention}: роль «{role_name}», реакция {emoji}.{warn}")
 
-    async def add_entry(self, guild: discord.Guild, label: str, action: str, target: int, emoji: str = "") -> str:
-        """Строка с реакцией в сообщении бота: дописывает в неполное, иначе новое сообщение."""
+    async def add_entry(
+        self, guild: discord.Guild, label: str, action: str, target: int, emoji: str = "", header: str = HEADER
+    ) -> str:
+        """Строка с реакцией в сообщении бота с этой шапкой: дописывает в неполное, иначе новое сообщение."""
         async with self._entries:
             g = self.bot.gcfg(guild.id)
             channel = guild.get_channel(g.roles_channel_id)
@@ -101,45 +106,48 @@ class Rooms:
                         msg = await channel.fetch_message(mid)
                     except discord.NotFound:
                         continue
-                    if msg.content.startswith(HEADER):
+                    if msg.content.startswith(header):
                         await msg.edit(content=f"{msg.content}\n{emoji} {label}")
                         break
                     msg = None
             if msg is None:
-                msg = await channel.send(f"{HEADER}\n{emoji} {label}", allowed_mentions=discord.AllowedMentions.none())
+                msg = await channel.send(f"{header}\n{emoji} {label}", allowed_mentions=discord.AllowedMentions.none())
             await msg.add_reaction(emoji)
             await self.bot.store.add_reaction(guild.id, msg.id, emoji, action, target)
             (await self.ours()).add(msg.id)
             return emoji
 
     async def ensure_optout(self, guild: discord.Guild) -> None:
-        """Строка «− #канал: … выйти…» в сообщении бота для каждого optout-канала, где её ещё нет. Холостой режим —
-        только отчёт, раз за запуск."""
+        """Отдельное сообщение бота в канале ролей: по строке с реакцией на каждый optout-канал, где её ещё нет;
+        бот ставит реакции сам, иначе нажать нечего. Режим — features.optout; dry — только отчёт, раз за запуск."""
         g = self.bot.gcfg(guild.id)
-        if not g.roles_channel_id or not g.optout_channels:
+        mode = self.bot.feature(guild.id, "optout")
+        if mode == "off" or not g.roles_channel_id or not g.optout_channels:
             return
-        rows = await self.bot.store.reactions_of(guild.id)
-        have = {t for _, _, a, t in rows if a == "optout"}
-        used = {e for _, e, _, _ in rows}
-        for cid in g.optout_channels:
-            ch = guild.get_channel(cid)
-            if cid in have or not ch:
-                continue
-            emoji = g.optout_emoji.get(str(cid)) or next((e for e in OPTOUT_POOL if e not in used), "")
-            label = f"− #{ch.name}: поставьте реакцию — выйти (новые сообщения придут в личку), снимите — вернуться"
-            used.add(emoji)
-            if self.bot.dry(guild.id):
-                if cid not in self._told:
-                    self._told.add(cid)
-                    await self.bot.report(
-                        guild.id,
-                        f"[холостой] добавил бы в сообщение бота в <#{g.roles_channel_id}> строку: {emoji} {label}",
-                    )
-                continue
-            if guild.get_channel(g.roles_channel_id) is None:
-                await self.bot.report(guild.id, "Строки выхода не добавлены: бот не видит канал ролей.")
-                return
-            await self.add_entry(guild, label, "optout", cid, emoji)
+        async with self._optout_lock:
+            rows = await self.bot.store.reactions_of(guild.id)
+            have = {t for _, _, a, t in rows if a == "optout"}
+            used = {e for _, e, _, _ in rows}
+            for cid in g.optout_channels:
+                ch = guild.get_channel(cid)
+                if cid in have or not ch:
+                    continue
+                emoji = g.optout_emoji.get(str(cid)) or next((e for e in OPTOUT_POOL if e not in used), "")
+                label = f"#{ch.name} — поставьте реакцию, чтобы выйти; снимите — канал вернётся"
+                used.add(emoji)
+                if mode == "dry":
+                    if cid not in self._told:
+                        self._told.add(cid)
+                        await self.bot.report(
+                            guild.id,
+                            f"[холостой] добавил бы в <#{g.roles_channel_id}> отдельным сообщением строку: "
+                            f"{emoji} {label}",
+                        )
+                    continue
+                if guild.get_channel(g.roles_channel_id) is None:
+                    await self.bot.report(guild.id, "Строки выхода не добавлены: бот не видит канал ролей.")
+                    return
+                await self.add_entry(guild, label, "optout", cid, emoji, header=OPTOUT_HEADER)
 
     # --- реакции -----------------------------------------------------------------------
     async def reaction(self, p: discord.RawReactionActionEvent, added: bool) -> None:
@@ -222,14 +230,17 @@ class Rooms:
             await member.remove_roles(found[0], reason="Apparitor: выход по реакции")
 
     async def optout(self, member: discord.Member, on: bool, cid: int, p: discord.RawReactionActionEvent) -> None:
-        """Реакция на строке «− #канал: … выйти…»: поставили — канал прячется (запрет VIEW на участника, остальные его
-        записи в канале целы) и новые сообщения идут в личку; сняли — канал возвращается."""
+        """Реакция на строке выхода: поставили — канал прячется (запрет VIEW на участника, остальные его записи
+        в канале целы) и новые сообщения идут в личку; сняли — канал возвращается. Режим — features.optout."""
         gid, emoji = member.guild.id, str(p.emoji)
+        mode = self.bot.feature(gid, "optout")
+        if mode == "off":
+            return
         c = member.guild.get_channel(cid)
         if not c:
             await self.bot.report(gid, f"Реакция {emoji} {member.mention}: канала {cid} больше нет.")
             return
-        if self.bot.dry(gid):
+        if mode == "dry":
             what = f"спрятал бы #{c.name}, пересылал бы его сообщения в личку" if on else f"вернул бы #{c.name}"
             await self.bot.report(gid, f"[холостой] {emoji} {member.mention}: {what}.")
             return
@@ -273,7 +284,7 @@ class Rooms:
     async def message(self, m: discord.Message) -> None:
         if not m.guild or m.channel.id not in self.bot.gcfg(m.guild.id).optout_channels:
             return
-        if self.bot.dry(m.guild.id):
+        if self.bot.feature(m.guild.id, "optout") != "live":
             return
         for uid in await self.bot.store.optouts(m.guild.id, m.channel.id):
             member = await self.bot.member(m.guild.id, uid)

@@ -88,7 +88,7 @@ def register(bot: Apparitor) -> None:
         # сначала данные, потом связка: упавший API не оставит связку без ролей
         info = await bot.wiki.user_info(p["wiki_name"])
         await bot.store.link(inter.user.id, p["wiki_name"], "edit-summary", revid)
-        verdict = await bot.evaluate(inter.user, info, p["wiki_name"])
+        verdict = await bot.evaluate(inter.user, info, p["wiki_name"], self_confirmed=True)
         await inter.followup.send(
             f"Подтверждено (revid {revid}). {fmt(info) if info else ''}\n{verdict.text}", ephemeral=True
         )

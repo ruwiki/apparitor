@@ -1,10 +1,10 @@
-"""Выход из #readme и #announcements — строки «− #канал: поставьте реакцию — выйти (…), снимите — вернуться»."""
+"""Выход из #readme и #announcements: отдельный пост бота в #roles, строки «🚪 #readme — поставьте реакцию…»."""
 
 from types import SimpleNamespace
 
 import discord
 
-from apparitor.rooms import HEADER, OPTOUT_POOL, POOL, plain
+from apparitor.rooms import HEADER, OPTOUT_HEADER, OPTOUT_POOL, POOL, plain
 from tests.conftest import GUILD
 from tests.test_gate_rooms import capture
 
@@ -64,7 +64,7 @@ class FakeChannel:
         return SimpleNamespace(remove_reaction=remove_reaction)
 
 
-def world(bot, monkeypatch, live=True, readme_history=()):
+def world(bot, monkeypatch, mode="live", readme_history=()):
     chans = {
         ROLES: FakeChannel(ROLES, "roles"),
         README: FakeChannel(README, "readme", readme_history),
@@ -72,7 +72,12 @@ def world(bot, monkeypatch, live=True, readme_history=()):
     }
     guild = SimpleNamespace(id=GUILD, name="Сообщество", get_channel=lambda i: chans.get(i))
     monkeypatch.setattr(bot, "get_guild", lambda gid: guild)
-    bot.cfg.guild[GUILD].dry_run = not live
+    # режим выхода — своя функция: dry_run сервера (в конфиге true) на неё не влияет
+    assert bot.cfg.guild[GUILD].dry_run is not False
+    if mode == "off":
+        bot.cfg.guild[GUILD].features.pop("optout", None)
+    else:
+        bot.cfg.guild[GUILD].features["optout"] = mode
     return guild, chans
 
 
@@ -101,33 +106,72 @@ def member(chans, dm=None, mid=7):
     ), dm
 
 
-async def test_lines_go_into_one_message_with_common_header(bot, monkeypatch):
+LINE_README = "🚪 #readme — поставьте реакцию, чтобы выйти; снимите — канал вернётся"
+LINE_ANN = "🔕 #announcements — поставьте реакцию, чтобы выйти; снимите — канал вернётся"
+
+
+async def test_exit_post_is_its_own_message_with_reactions_set_by_the_bot(bot, monkeypatch):
     capture(bot)
     guild, chans = world(bot, monkeypatch)
     await bot.rooms.ensure_optout(guild)
     (msg,) = chans[ROLES].msgs.values()
-    assert msg.content == (
-        f"{HEADER}\n🚪 − #readme: поставьте реакцию — выйти (новые сообщения придут в личку), снимите — вернуться"
-        "\n🔕 − #announcements: поставьте реакцию — выйти (новые сообщения придут в личку), снимите — вернуться"
-    )
-    assert HEADER.startswith("Каналы:") and msg.reactions == ["🚪", "🔕"]
+    assert msg.content == f"{OPTOUT_HEADER}\n{LINE_README}\n{LINE_ANN}"
+    assert OPTOUT_HEADER.startswith("Подписка в личку:") and not msg.content.startswith(HEADER)
+    assert msg.reactions == ["🚪", "🔕"]  # бот ставит реакции сам, иначе нажать нечего
     assert await bot.store.reaction(msg.id, "🚪") == ("optout", README)
     assert await bot.store.reaction(msg.id, "🔕") == ("optout", ANN)
-    await bot.rooms.ensure_optout(guild)  # повторный запуск (рестарт) строк не множит
-    assert len(chans[ROLES].msgs) == 1 and msg.content.count("поставьте реакцию — выйти (") == 2
-    # новый канал дописывается в то же сообщение
+    await bot.rooms.ensure_optout(guild)  # повторный запуск (рестарт, второй on_ready) строк не множит
+    assert len(chans[ROLES].msgs) == 1 and msg.content.count("поставьте реакцию, чтобы выйти") == 2
+
+
+async def test_two_on_ready_at_once_post_once(bot, monkeypatch):
+    import asyncio
+
+    capture(bot)
+    guild, chans = world(bot, monkeypatch)
+    await asyncio.gather(bot.rooms.ensure_optout(guild), bot.rooms.ensure_optout(guild))
+    assert len(chans[ROLES].msgs) == 1 and len(await bot.store.reactions_of(GUILD)) == 2
+
+
+async def test_new_channel_lines_do_not_mix_into_the_exit_post(bot, monkeypatch):
+    capture(bot)
+    guild, chans = world(bot, monkeypatch)
+    await bot.rooms.ensure_optout(guild)
+    exit_msg = next(iter(chans[ROLES].msgs.values()))
     emoji = await bot.rooms.add_entry(guild, "<#555>", "role", 99)
-    assert msg.content.endswith(f"\n{emoji} <#555>") and len(chans[ROLES].msgs) == 1
+    assert len(chans[ROLES].msgs) == 2 and "<#555>" not in exit_msg.content
+    role_msg = next(m for m in chans[ROLES].msgs.values() if m is not exit_msg)
+    assert role_msg.content == f"{HEADER}\n{emoji} <#555>"
+    # а новая строка выхода дописывается в пост выхода, не в пост ролей
+    await bot.rooms.add_entry(guild, "#extra — …", "optout", 777, "📤", header=OPTOUT_HEADER)
+    assert exit_msg.content.endswith("📤 #extra — …") and "#extra" not in role_msg.content
 
 
 async def test_dry_reports_once_and_posts_nothing(bot, monkeypatch):
     out = capture(bot)
-    guild, chans = world(bot, monkeypatch, live=False)
+    guild, chans = world(bot, monkeypatch, mode="dry")
     await bot.rooms.ensure_optout(guild)
     await bot.rooms.ensure_optout(guild)
     lines = [x for x in out if "[холостой] добавил бы" in x]
     assert len(lines) == 2 and "🚪" in lines[0] and "🔕" in lines[1]  # по одной на канал, не по запуску
     assert chans[ROLES].msgs == {} and await bot.store.reactions_of(GUILD) == []
+
+
+async def test_off_does_nothing_at_all(bot, monkeypatch):
+    out = capture(bot)
+    guild, chans = world(bot, monkeypatch, mode="off")
+    await bot.rooms.ensure_optout(guild)
+    assert out == [] and chans[ROLES].msgs == {}
+    await bot.store.add_reaction(GUILD, 1001, "🚪", "optout", README)  # реакция на старом посте при выключенной функции
+    m, dm = member(chans)
+    p = SimpleNamespace(guild_id=GUILD, user_id=7, message_id=1001, emoji="🚪", member=m, channel_id=ROLES)
+    await bot.rooms.reaction(p, True)
+    assert chans[README].ow == {} and dm.sent == [] and await bot.store.optouts(GUILD, README) == []
+    await bot.store.set_optout(GUILD, README, 7, True)
+    msg = FakeMsg(5, "новое", SimpleNamespace(id=README))
+    msg.guild = SimpleNamespace(id=GUILD)
+    await bot.rooms.message(msg)
+    assert msg.forwarded == []
 
 
 def test_exit_emoji_are_not_carls():
