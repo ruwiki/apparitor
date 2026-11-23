@@ -312,6 +312,14 @@ def test_rollback_without_yes_changes_nothing(tmp_path):
     assert all(c[0] == "GET" for c in fake.calls)
 
 
+def test_digest_ignores_overwrite_order_from_api():
+    """Discord возвращает перекрытия канала в разном порядке: тот же сервер должен давать тот же отпечаток."""
+    a, b = world(), world()
+    for ch in b.channels:
+        ch["permission_overwrites"].reverse()
+    assert wall.digest(build(a, SPEC, Opts()).ops) == wall.digest(build(b, SPEC, Opts()).ops)
+
+
 def test_plan_changes_when_server_changes():
     """apply сверяет отпечаток плана со свежим снимком: правка модератора между plan и apply останавливает запуск."""
     a, b = world(), world()

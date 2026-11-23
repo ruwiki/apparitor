@@ -320,7 +320,8 @@ class Planner:
             put(self.role(n), allow_add=VIEW)
         for n in sp.welcome_bots:
             put(self.role(n), allow_add=VIEW | SEND)
-        overwrites = [{"id": t, "type": v[0], "allow": str(v[1]), "deny": str(v[2])} for t, v in ows.items()]
+        # по id: Discord отдаёт перекрытия в другом порядке при каждом запросе, а отпечаток плана должен быть один
+        overwrites = [{"id": t, "type": v[0], "allow": str(v[1]), "deny": str(v[2])} for t, v in sorted(ows.items())]
         self.ops.append(
             Op(
                 "create",
