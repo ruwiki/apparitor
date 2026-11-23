@@ -46,9 +46,20 @@ def test_managed_and_diff(cfg):
     assert add == ["✔"] and rem == ["🆕 new user"], "чужие роли (Модератор чата) не трогаем"
 
 
-def test_decide_reject_strips_managed(cfg):
+def test_decide_reject_never_removes_human_roles(cfg):
+    """Блокировка: ✔ и роль флага выданы людьми — бот их не снимает, а сообщает, что правило сняло бы."""
     d = rules.decide(Admit(), cfg.for_guild(GUILD), info(blocked=True), {"✔", "Администратор", "Модератор чата"})
-    assert not d.ok and d.add == [] and d.remove == ["Администратор", "✔"] and d.changes
+    assert not d.ok and d.add == [] and d.remove == [] and d.would_remove == ["Администратор", "✔"] and d.changes
+
+
+def test_decide_only_cleanup_role_is_removed_and_only_on_admission(cfg):
+    g = cfg.for_guild(GUILD)
+    ok = rules.decide(cfg.admit_for(GUILD), g, info(groups=["autoreview"]), {"🆕 new user"})
+    assert ok.ok and ok.add == ["✔"] and ok.remove == ["🆕 new user"] and ok.would_remove == []
+    lost_flag = rules.decide(cfg.admit_for(GUILD), g, info(groups=["autoreview"]), {"✔", "Администратор"})
+    assert lost_flag.remove == [] and lost_flag.would_remove == ["Администратор"]  # флаг в рувики пропал: решают люди
+    no = rules.decide(cfg.admit_for(GUILD), g, info(editcount=1), {"🆕 new user", "✔"})
+    assert not no.ok and no.remove == [] and no.would_remove == ["✔"]  # отказ: 🆕 тоже остаётся
 
 
 def test_community_rule_apat_or_year_and_edits(cfg):
@@ -64,7 +75,7 @@ def test_community_rule_apat_or_year_and_edits(cfg):
 
 def test_decide_reject_keeps_remove_on_confirm(cfg):
     d = rules.decide(cfg.admit_for(GUILD), cfg.for_guild(GUILD), info(editcount=1), {"🆕 new user"})
-    assert not d.ok and d.remove == []
+    assert not d.ok and d.remove == [] and d.would_remove == []
 
 
 def test_commands_registered(bot):

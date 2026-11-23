@@ -51,8 +51,10 @@ def role_diff(have: set[str], want: set[str], managed: set[str]) -> tuple[list[s
 
 
 def decide(admit: Admit, g: GuildCfg, info: UserInfo, have: set[str]) -> Decision:
+    """Бот только выдаёт. Единственное снятие — своя уборка remove_on_confirm (🆕) при впуске. Всё, что правило
+    сняло бы с выданного людьми (✔, роли флагов, при блокировке тоже), уходит в would_remove: решают модераторы."""
     ok, why = admissible(admit, info)
     want = set(wanted_roles(g, info)) if ok else set()
-    managed = managed_roles(g) if ok else managed_roles(g) - set(g.remove_on_confirm)  # отказ: 🆕 не снимать
-    add, rem = role_diff(have, want, managed)
-    return Decision(ok=ok, why=why, add=add, remove=rem)
+    cleanup = set(g.remove_on_confirm)
+    add, would = role_diff(have, want, managed_roles(g) - cleanup)
+    return Decision(ok=ok, why=why, add=add, remove=sorted(have & cleanup) if ok else [], would_remove=would)

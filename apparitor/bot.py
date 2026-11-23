@@ -198,7 +198,7 @@ class Apparitor(discord.Client):
     async def evaluate(
         self, member: discord.Member, info: UserInfo | None, wiki_name: str, quiet: bool = False
     ) -> Verdict:
-        """Единая точка: критерии впуска → роли (или снятие всех управляемых при отказе).
+        """Единая точка: критерии впуска → выдача ролей; снимается только 🆕 при впуске, остальное — строка модераторам.
         Вызывается из /confirm, /link, OAuth-колбэка, /sync и обхода новичков (quiet: без строки на каждого
         в служебный канал — обход шлёт сводку сам)."""
         gid = member.guild.id
@@ -209,21 +209,27 @@ class Apparitor(discord.Client):
             return Verdict(f"В рувики нет участника {wiki_name}.", notable=True)
         d = rules.decide(self.cfg.admit_for(gid), self.gcfg(gid), info, {r.name for r in member.roles})
         missing = await self.apply(member, info, d, quiet)
-        admitted = self.gcfg(gid).roles.get("admitted")
-        drops = bool(admitted) and admitted in d.remove
+        mods = self.mods_line(d)
         if not d.ok:
             await self.store.log(str(member.id), "reject", info.name, d.why)
-            return Verdict(f"Критерии впуска не пройдены: {d.why}.", notable=True, drops_admitted=drops)
+            return Verdict(f"Критерии впуска не пройдены: {d.why}.", notable=True, mods=mods)
         roles = f"выдать {listed(d.add)}, снять {listed(d.remove)}" + (
             f", на сервере нет {listed(missing)}" if missing else ""
         )
         if self.dry(gid):
             if quiet:  # строку в служебный канал шлёт вызывающий: «отчёт в служебном канале» было бы дублем
-                return Verdict(f"роли не менялись, было бы: {roles}.", d.changes, drops)
+                return Verdict(f"роли не менялись, было бы: {roles}.", d.changes, mods=mods)
             return Verdict(
-                f"Холостой режим: роли не менялись (было бы: {roles}); отчёт в служебном канале.", d.changes, drops
+                f"Холостой режим: роли не менялись (было бы: {roles}); отчёт в служебном канале.",
+                d.changes,
+                mods=mods,
             )
-        return Verdict(f"Роли: {roles}.", d.changes, drops)
+        return Verdict(f"Роли: {roles}.", d.changes, mods=mods)
+
+    @staticmethod
+    def mods_line(d: Decision) -> str:
+        """Что правило сняло бы с выданного людьми: бот этого не делает никогда, решают модераторы."""
+        return f"по правилу снял бы {listed(d.would_remove)} — решают модераторы" if d.would_remove else ""
 
     async def apply(self, member: discord.Member, info: UserInfo, d: Decision, quiet: bool = False) -> list[str]:
         """Применяет решение (или только отчитывается вхолостую). Возвращает имена ролей, которых нет на сервере."""
@@ -237,13 +243,14 @@ class Apparitor(discord.Client):
         above = [r for r in add + rem if not r.is_assignable()]
         add, rem = [r for r in add if r.is_assignable()], [r for r in rem if r.is_assignable()]
         reason = "" if d.ok else d.why
-        if not quiet and (add or rem or above or reason or dry):  # вхолостую отчитываемся всегда, иначе тест не виден
+        if not quiet and (add or rem or above or reason or d.would_remove or dry):  # вхолостую — всегда: тест виден
             await self.report(
                 guild.id,
                 f"{'[холостой] ' if dry else ''}{self.describe(guild.id, member, info)}"
                 f"{'; отказ: ' + reason if reason else ''}: выдать {listed(d.add)}, снять {listed(d.remove)}"
                 + (f", нет ролей {listed(missing)}" if missing else "")
-                + (f"; выше роли бота, не трону: {listed([r.name for r in above])}" if above else ""),
+                + (f"; выше роли бота, не трону: {listed([r.name for r in above])}" if above else "")
+                + (f"; {self.mods_line(d)}" if d.would_remove else ""),
             )
         if not dry:
             if add:

@@ -57,11 +57,12 @@ class Decision:
     ok: bool
     why: str
     add: list[str]
-    remove: list[str]
+    remove: list[str]  # только своя уборка при впуске (remove_on_confirm): 🆕
+    would_remove: list[str] = field(default_factory=list)  # правило сняло бы, но роли выдавали люди: решают модераторы
 
     @property
     def changes(self) -> bool:
-        return bool(self.add or self.remove)
+        return bool(self.add or self.remove or self.would_remove)
 
 
 @dataclass
@@ -71,4 +72,4 @@ class Verdict:
 
     text: str
     notable: bool
-    drops_admitted: bool = False  # отказ по правилу снимает ✔: у ручных исключений модераторов тоже
+    mods: str = ""  # строка для модераторов: что правило сняло бы (в ответ человеку не идёт)

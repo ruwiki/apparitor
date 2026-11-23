@@ -24,6 +24,7 @@ def line(r: Row) -> str:
     return (
         f"{r.who} ↔ {info.name} ({info.labels_text}{why}): "
         f"роли бота сейчас {r.mine}; бот выдал бы {listed(d.add)}, снял бы {listed(d.remove)}"
+        + (f"; по правилу снял бы {listed(d.would_remove)} — решают модераторы" if d.would_remove else "")
     )
 
 

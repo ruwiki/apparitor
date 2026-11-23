@@ -60,3 +60,34 @@ async def test_apply_skips_roles_above_bot_but_gives_the_rest(bot, monkeypatch):
     await bot.evaluate(m, info(groups=["sysop"]), "X")
     assert ("add", ["✔"]) in calls and ("remove", ["🆕 new user"]) in calls
     assert "выше роли бота, не трону: Администратор" in out[0]
+
+
+async def test_live_blocked_member_keeps_every_role_and_moderators_get_a_line(bot, monkeypatch):
+    """Главное правило: решение человека выше правила. Заблокированный с ✔ и Администратором — снятий 0."""
+    out, calls = [], []
+
+    async def report(gid, text, file=None):
+        out.append(text)
+        return True
+
+    async def remove_roles(*r, reason=""):
+        calls.append(("remove", [x.name for x in r]))
+
+    async def add_roles(*r, reason=""):
+        calls.append(("add", [x.name for x in r]))
+
+    monkeypatch.setattr(bot, "report", report)
+    bot.cfg.guild[GUILD].dry_run = False
+    m = member("✔", "Администратор")
+    m.add_roles, m.remove_roles = add_roles, remove_roles
+    v = await bot.evaluate(m, info(blocked=True), "X")
+    assert calls == []
+    assert "по правилу снял бы Администратор, ✔ — решают модераторы" in out[0] and v.notable
+    assert (
+        "решают модераторы" in v.mods and "решают модераторы" not in v.text
+    )  # человеку строка для модераторов не идёт
+    out.clear()
+    m = member("🆕 new user")  # впуск: единственное снятие — своя уборка 🆕
+    m.add_roles, m.remove_roles = add_roles, remove_roles
+    await bot.evaluate(m, info(groups=["autoreview"]), "X")
+    assert ("remove", ["🆕 new user"]) in calls and ("add", ["✔"]) in calls

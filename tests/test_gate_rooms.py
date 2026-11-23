@@ -184,8 +184,8 @@ async def test_quiet_verdict_has_no_report_tail(bot):
     assert "служебном канале" not in v.text and "было бы:" in v.text
 
 
-async def test_sync_warns_about_dropped_checkmark(bot, monkeypatch):
-    """/sync называет тех, у кого отказ по правилу снимет ✔ (ручные исключения модераторов)."""
+async def test_sync_lists_what_rule_would_remove_but_removes_nothing(bot, monkeypatch):
+    """/sync: у не проходящего правило ✔ остаётся (выдал человек), строка «по правилу снял бы» — для модераторов."""
     sent = []
 
     async def send(text, **kw):
@@ -209,7 +209,8 @@ async def test_sync_warns_about_dropped_checkmark(bot, monkeypatch):
     capture(bot)
     inter = SimpleNamespace(guild_id=GUILD, response=SimpleNamespace(defer=defer), followup=SimpleNamespace(send=send))
     await bot.tree.get_command("sync").callback(inter)
-    assert "✔ потеряли бы 1" in sent[0] and "Новичок" in sent[0]
+    assert "Новичок" in sent[0] and "по правилу снял бы ✔ — решают модераторы" in sent[0]
+    assert "потеряли" not in sent[0]  # предупреждение про потерю ✔ больше не нужно
 
 
 async def test_import_links_from_wikiauthbot(bot, monkeypatch):
