@@ -1,5 +1,6 @@
-"""Стена прав сервера: каталог «Добро пожаловать» виден только непроверенным и модераторам, остальное закрыто от тех,
-кто зашёл без проверки. Скрипт, не часть бота: бот ничего из этого сам не делает.
+"""Стена прав сервера: новый канал lobby для зашедших без проверки и модераторов, старый #welcome скрыт от @everyone
+(видят ✔ и модераторы). Другие каналы по умолчанию не закрываются (Spec.closed пуст). Скрипт, не часть бота: бот
+ничего из этого сам не делает.
 
     python -m apparitor.wall snapshot --dir D --token-file F      снимок (чтение): каналы — токеном, что видит все,
                                                                   участники — ботом через --read-token-file
@@ -88,6 +89,7 @@ class Snap:
     channels: list[dict]
     roles: list[dict]
     members: list[dict]  # id, bot, roles — больше про участников не храним
+    operator: str = ""  # id владельца токена, которым делают запись: ему тоже нужно видеть канал, чтобы его править
 
     @property
     def gid(self) -> str:
@@ -105,6 +107,10 @@ def fetch(rest: Rest, gid: str, readers: Rest | None = None) -> Snap:
     guild = rest.request("GET", f"/guilds/{gid}")
     channels = rest.request("GET", f"/guilds/{gid}/channels")
     roles = rest.request("GET", f"/guilds/{gid}/roles")
+    try:
+        operator = str(rest.request("GET", "/users/@me")["id"])
+    except RestError:
+        operator = ""
     members, after = [], "0"
     while True:
         page = (readers or rest).request("GET", f"/guilds/{gid}/members?limit=1000&after={after}")
@@ -112,7 +118,7 @@ def fetch(rest: Rest, gid: str, readers: Rest | None = None) -> Snap:
         if len(page) < 1000:
             break
         after = page[-1]["user"]["id"]
-    return Snap(guild, channels, roles, members)
+    return Snap(guild, channels, roles, members, operator)
 
 
 def save(snap: Snap, d: Path) -> None:
@@ -122,16 +128,19 @@ def save(snap: Snap, d: Path) -> None:
     (d / "guild_roles.json").write_text(json.dumps(snap.roles, ensure_ascii=False, indent=1), encoding="utf-8")
     lines = (json.dumps({k: m[k] for k in ("id", "bot", "roles")}) for m in snap.members)  # только это
     (d / "members.jsonl").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    (d / "operator.json").write_text(json.dumps({"id": snap.operator}), encoding="utf-8")
 
 
 def load(d: Path) -> Snap:
     j = lambda n: json.loads((d / n).read_text(encoding="utf-8"))  # noqa: E731
     members = [json.loads(x) for x in (d / "members.jsonl").read_text(encoding="utf-8").splitlines() if x.strip()]
+    operator = j("operator.json")["id"] if (d / "operator.json").exists() else ""  # в старых снимках файла нет
     return Snap(
         j("guild.json"),
         j("guild_channels.json"),
         j("guild_roles.json"),
         [{"id": m["id"], "bot": m["bot"], "roles": m["roles"]} for m in members],
+        operator,
     )
 
 
@@ -199,11 +208,9 @@ class Spec:
     apparitor: str = "Apparitor"
     category: str = "828327760648863744"  # «Добро пожаловать!»
     old_welcome: str = "728220635905523782"
-    closed: tuple = (
-        "353333123381067777",
-        "778916107893473310",
-        "1569522756142502030",
-    )  # readme, announcements, server-hub
+    # каналы, которые закрываются от @everyone (✔ и Apparitor их видят). Сейчас пусто: хозяин закрывать readme,
+    # announcements и server-hub не просил, они видны всем, как до стены.
+    closed: tuple = ()
     roles_channel: str = "768773664949927946"
     new_name: str = "lobby"  # решение хозяина: не welcome, чтобы не путать со старым
     # какие роли ботов сохраняют просмотр там, где @everyone его теряет (бот пишет в канале): канал -> имена ролей.
@@ -211,8 +218,6 @@ class Spec:
     bot_view: dict = field(
         default_factory=lambda: {
             "728220635905523782": ("carl-bot", "WikiAuthBot2"),  # пишут приветствия, пока их не перевели на новый
-            "353333123381067777": ("carl-bot",),  # его сообщения в #readme
-            "778916107893473310": ("wiki bot",),  # WikiBot отвечает в #announcements
         }
     )
 
@@ -348,18 +353,20 @@ class Planner:
         )
 
     def hide_ops(self) -> None:
+        """В каждом канале сначала разрешения (✔, модераторы, Apparitor), запрет @everyone — последним: оператор,
+        который видит канал только через @everyone, иначе терял бы его до своих же следующих правок (403)."""
         sp = self.spec
         ver, new, app = self.role(sp.verified), self.role(sp.newbie), self.role(sp.apparitor)
         o = sp.old_welcome
-        self.edit(o, sp.guild_id, why="старый #welcome скрыт от непроверенных: @everyone не видит", deny_add=VIEW)
         self.edit(o, ver, why="проверенные видят, писать нельзя", allow_add=VIEW | HISTORY, deny_add=SEND)
         for n in sp.old_mods:
             self.edit(o, self.role(n), why="модераторы видят", allow_add=VIEW)
         self.edit(o, new, why="новички больше не видят старый #welcome", allow_rm=VIEW)
+        self.edit(o, sp.guild_id, why="старый #welcome скрыт от непроверенных: @everyone не видит", deny_add=VIEW)
         for c in sp.closed:
-            self.edit(c, sp.guild_id, why="@everyone не видит", deny_add=VIEW)
             self.edit(c, ver, why="проверенные видят", allow_add=VIEW)
             self.edit(c, app, why="Apparitor видит (пересылка при выходе из каналов)", allow_add=VIEW)
+            self.edit(c, sp.guild_id, why="@everyone не видит", deny_add=VIEW)
 
     def bot_ops(self) -> None:
         """Роли ботов, которым нужен просмотр там, где @everyone его заберёт, — до скрытия, чтобы бот не терял канал."""
@@ -408,7 +415,8 @@ class Planner:
 
 
 def build(snap: Snap, spec: Spec, opts: Opts) -> Planner:
-    """Порядок: роль бота и новый канал (новичкам есть куда идти) → просмотр ботам → скрытие → системный канал."""
+    """Порядок: роль бота и новый канал (новичкам есть куда идти) → просмотр ботам → скрытие (в канале запрет
+    @everyone последним) → системный канал."""
     g = set(opts.groups)
     p = Planner(snap, spec, opts)
     if "position" in g:
@@ -464,34 +472,69 @@ def apply_to_snap(snap: Snap, ops: list[Op], ids: dict[str, str] | None = None) 
     ids = ids or {}
     sub = lambda x: ids.get(x, x)  # noqa: E731
     for op in ops:
-        if op.kind == "create":
-            e = op.extra
-            s.channels.append(
-                {
-                    "id": sub(NEW),
-                    "name": e["name"],
-                    "type": e["type"],
-                    "parent_id": e["parent_id"],
-                    "position": e["position"],
-                    "permission_overwrites": copy.deepcopy(e["permission_overwrites"]),
-                }
-            )
-        elif op.kind == "overwrite":
-            set_ow(s.chan(sub(op.channel)), op.target, op.ttype, tuple(op.after) if op.after else None)
-        elif op.kind == "system":
-            s.guild["system_channel_id"] = sub(op.after[0])
-        elif op.kind == "rename":
-            s.chan(op.channel)["name"] = op.after[0]
-        elif op.kind == "position":
-            moved = next(r for r in s.roles if r["id"] == op.target)
-            old, new = moved["position"], op.after[0]
-            for r in s.roles:
-                if new > old and old < r["position"] <= new:
-                    r["position"] -= 1
-                elif new < old and new <= r["position"] < old:
-                    r["position"] += 1
-            moved["position"] = new
+        _apply_op(s, op, sub)
     return s
+
+
+def _apply_op(s: Snap, op: Op, sub) -> None:
+    if op.kind == "create":
+        e = op.extra
+        s.channels.append(
+            {
+                "id": sub(NEW),
+                "name": e["name"],
+                "type": e["type"],
+                "parent_id": e["parent_id"],
+                "position": e["position"],
+                "permission_overwrites": copy.deepcopy(e["permission_overwrites"]),
+            }
+        )
+    elif op.kind == "overwrite":
+        set_ow(s.chan(sub(op.channel)), op.target, op.ttype, tuple(op.after) if op.after else None)
+    elif op.kind == "system":
+        s.guild["system_channel_id"] = sub(op.after[0])
+    elif op.kind == "rename":
+        s.chan(op.channel)["name"] = op.after[0]
+    elif op.kind == "position":
+        moved = next(r for r in s.roles if r["id"] == op.target)
+        old, new = moved["position"], op.after[0]
+        for r in s.roles:
+            if new > old and old < r["position"] <= new:
+                r["position"] -= 1
+            elif new < old and new <= r["position"] < old:
+                r["position"] += 1
+        moved["position"] = new
+
+
+def operator_warnings(snap: Snap, ops: list[Op], spec: Spec) -> list[str]:
+    """Пошагово по роли оператора из снимка: пропадает ли у него просмотр канала. Если в этом канале дальше ещё есть
+    операции — Discord ответит 403 Missing Access на первой из них; если нет — оператор просто больше не видит канал."""
+    me = next((m for m in snap.members if m["id"] == snap.operator), None)
+    if not snap.operator or not me:
+        return ["оператор (владелец токена) не найден среди участников снимка: просмотр оператора не проверен"]
+    roles = {r["id"]: r for r in snap.roles}
+    sees = lambda s, cid: can_view(roles, spec.guild_id, me["id"], me["roles"], s.chan(cid))  # noqa: E731
+    warns, cur = [], snap
+    for i, op in enumerate(ops):
+        nxt = copy.deepcopy(cur)
+        _apply_op(nxt, op, lambda x: x)
+        if op.kind == "overwrite" and sees(cur, op.channel) and not sees(nxt, op.channel):
+            name = nxt.chan(op.channel)["name"]
+            later = [
+                j + 1 for j, o in enumerate(ops[i + 1 :], i + 1) if o.kind == "overwrite" and o.channel == op.channel
+            ]
+            if later:
+                warns.append(
+                    f"оператор {snap.operator} теряет просмотр #{name} на шаге {i + 1}, а шаги {later} в нём ещё "
+                    "впереди: Discord ответит 403 Missing Access. Поставьте разрешения раньше запрета "
+                    "или дайте оператору роль с просмотром"
+                )
+            else:
+                warns.append(
+                    f"оператор {snap.operator} после шага {i + 1} не видит #{name} (операций в нём больше нет)"
+                )
+        cur = nxt
+    return warns
 
 
 def report(before: Snap, after: Snap, spec: Spec, out=print) -> list[str]:
@@ -706,7 +749,7 @@ def cmd_plan(a, d: Path, out=print) -> Planner:
     p = build(snap, spec, make_opts(a, spec))
     show(p, out)
     after = apply_to_snap(snap, p.ops)
-    warns = report(snap, after, spec, out)
+    warns = report(snap, after, spec, out) + operator_warnings(snap, p.ops, spec)
     for w in warns:
         out("!! " + w)
     d.mkdir(parents=True, exist_ok=True)
@@ -750,6 +793,8 @@ def cmd_apply(a, d: Path, out=print) -> int:
         show(p, out)
         return 2
     show(p, out)
+    for w in operator_warnings(snap, p.ops, spec):
+        out("!! " + w)
     if not a.yes:
         out("Это только печать. Выполнить: добавьте --yes.")
         return 0
