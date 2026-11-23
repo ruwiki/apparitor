@@ -30,6 +30,7 @@ SCHEMA = {
                      action varchar(16) not null, target bigint not null, primary key (message_id, emoji))""",
     "optout": """(guild_id bigint not null, discord_id bigint not null, since varchar(20) not null,
                   primary key (guild_id, discord_id))""",
+    "gate_told": """(discord_id bigint primary key, digest varchar(32) not null, at varchar(20) not null)""",
     "log": """(id integer primary key {autoinc}, ts varchar(20), actor varchar(32), action varchar(32),
                target varchar(255), detail text)""",
 }
@@ -201,6 +202,19 @@ class Store:
             self._exec,
             "insert into log (ts, actor, action, target, detail) values (?,?,?,?,?)",
             (now_ts(), actor, action, target, detail),
+        )
+
+    # --- обход непроверенных: что уже сообщали -------------------------------------------
+    async def gate_told_all(self) -> dict[int, str]:
+        """discord_id -> отпечаток последней сводки по участнику (текст не храним)."""
+        rows = await self._run(lambda: self._exec("select discord_id, digest from gate_told").fetchall())
+        return {int(a): b for a, b in rows}
+
+    async def gate_told_set(self, discord_id: int, digest: str) -> None:
+        await self._run(
+            self._exec,
+            self._upsert_sql("gate_told", "discord_id, digest, at", 3),
+            (discord_id, digest, now_ts()),
         )
 
     # --- реакции и выход из каналов ------------------------------------------------

@@ -150,15 +150,21 @@ class Apparitor(discord.Client):
             return Verdict(f"В рувики нет участника {wiki_name}.", notable=True)
         d = rules.decide(self.cfg.admit_for(gid), self.gcfg(gid), info, {r.name for r in member.roles})
         missing = await self.apply(member, info, d, quiet)
+        admitted = self.gcfg(gid).roles.get("admitted")
+        drops = bool(admitted) and admitted in d.remove
         if not d.ok:
             await self.store.log(str(member.id), "reject", info.name, d.why)
-            return Verdict(f"Критерии впуска не пройдены: {d.why}.", notable=True)
+            return Verdict(f"Критерии впуска не пройдены: {d.why}.", notable=True, drops_admitted=drops)
         roles = f"выдать {listed(d.add)}, снять {listed(d.remove)}" + (
             f", на сервере нет {listed(missing)}" if missing else ""
         )
         if self.dry(gid):
-            return Verdict(f"Холостой режим: роли не менялись (было бы: {roles}); отчёт в служебном канале.", d.changes)
-        return Verdict(f"Роли: {roles}.", d.changes)
+            if quiet:  # строку в служебный канал шлёт вызывающий: «отчёт в служебном канале» было бы дублем
+                return Verdict(f"роли не менялись, было бы: {roles}.", d.changes, drops)
+            return Verdict(
+                f"Холостой режим: роли не менялись (было бы: {roles}); отчёт в служебном канале.", d.changes, drops
+            )
+        return Verdict(f"Роли: {roles}.", d.changes, drops)
 
     async def apply(self, member: discord.Member, info: UserInfo, d: Decision, quiet: bool = False) -> list[str]:
         """Применяет решение (или только отчитывается вхолостую). Возвращает имена ролей, которых нет на сервере."""

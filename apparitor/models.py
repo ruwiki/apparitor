@@ -71,3 +71,4 @@ class Verdict:
 
     text: str
     notable: bool
+    drops_admitted: bool = False  # отказ по правилу снимает ✔: у ручных исключений модераторов тоже

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import asyncio
 import datetime as dt
+import hashlib
 import io
 import logging
 from typing import TYPE_CHECKING
@@ -29,7 +30,8 @@ class Gate:
         self.bot = bot
         self.wab = WikiAuthBot(UA)
         self.last: dict[int, dt.datetime] = {}  # discord_id -> когда спрашивали WikiAuthBot
-        self.told: dict[int, str] = {}  # discord_id -> последний отчёт: одинаковый не повторяем
+        self.told: dict[int, str] | None = None  # discord_id -> отпечаток последнего отчёта; живёт и в БД, чтобы
+        # после рестарта не слать всё заново
 
     def watched(self) -> list[int]:
         return [g for g in self.bot.cfg.guilds if self.bot.gcfg(g).gate_watch and WikiAuthBot.key(g)]
@@ -51,7 +53,13 @@ class Gate:
         fresh = m.joined_at and now - m.joined_at < FRESH
         return now - last >= (dt.timedelta(seconds=TICK - 5) if fresh else STALE)
 
+    @staticmethod
+    def digest(line: str) -> str:
+        return hashlib.blake2b(line.encode(), digest_size=16).hexdigest()
+
     async def sweep(self, gid: int) -> None:
+        if self.told is None:
+            self.told = await self.bot.store.gate_told_all()
         guild = self.bot.get_guild(gid)
         admitted = self.bot.gcfg(gid).roles.get("admitted")
         if not guild or not admitted:
@@ -67,8 +75,9 @@ class Gate:
             except Exception as e:  # сбой WikiAuthBot/вики по одному участнику не валит обход
                 log.warning("проверка %s: %s", m.id, e)
                 continue
-            if line and self.told.get(m.id) != line:
-                self.told[m.id] = line
+            if line and self.told.get(m.id) != (d := self.digest(line)):
+                self.told[m.id] = d
+                await self.bot.store.gate_told_set(m.id, d)
                 lines.append(line)
         await self.tell(gid, lines)
 

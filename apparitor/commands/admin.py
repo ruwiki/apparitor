@@ -24,13 +24,23 @@ def register(bot: Apparitor) -> None:
             (did, name, m) for did, name in await bot.store.all_links() if (m := await bot.member(inter.guild_id, did))
         ]
         infos = await bot.wiki.users_info([n for _, n, _ in here])
-        lines = []
+        lines, drops = [], []
         for _, name, m in here:
             verdict = await bot.evaluate(m, infos.get(name), name)
             if verdict.notable:
                 lines.append(f"{name}: {verdict.text}")
+            if verdict.drops_admitted:
+                drops.append(name)
+        warn = ""
+        if drops:  # ✔ снимается и у ручных исключений модераторов; решение хозяина по ним не принято
+            tense = "потеряли бы" if bot.dry(inter.guild_id) else "потеряли"
+            warn = (
+                f"⚠️ ✔ {tense} {len(drops)}: не проходят правило сервера. Среди них могут быть ручные исключения "
+                f"модераторов: {', '.join(drops[:15])}{'…' if len(drops) > 15 else ''}\n"
+            )
         await inter.followup.send(
-            "\n".join(lines)[:1900] or f"Изменений нет (привязанных на сервере: {len(here)}).", ephemeral=True
+            (warn + "\n".join(lines))[:1900] or f"Изменений нет (привязанных на сервере: {len(here)}).",
+            ephemeral=True,
         )
 
     @tree.command(name="link", description="Привязать участника к учётке рувики вручную (только Manage Roles)")

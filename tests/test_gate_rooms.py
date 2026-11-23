@@ -143,3 +143,69 @@ async def test_forward_dry_run_does_nothing(bot, monkeypatch):
     ch = bot.gcfg(GUILD).optout_channels[0]
     m = SimpleNamespace(guild=SimpleNamespace(id=GUILD), channel=SimpleNamespace(id=ch), forward=boom)
     await bot.rooms.message(m)
+
+
+async def test_gate_told_survives_restart(bot, monkeypatch):
+    """Сводку по участнику, о которой уже писали, после рестарта (новый Gate, та же БД) не повторяем."""
+    out = capture(bot)
+    line = "<@1> ↔ **X**: роли не менялись, было бы: выдать ✔, снять —."
+
+    async def check(m):
+        return line
+
+    guild = SimpleNamespace(
+        id=GUILD,
+        members=[SimpleNamespace(id=1, bot=False, roles=[], joined_at=None)],
+    )
+    monkeypatch.setattr(bot, "get_guild", lambda gid: guild)
+    monkeypatch.setattr(bot.gate, "check", check)
+    await bot.gate.sweep(GUILD)
+    assert len(out) == 1
+    from apparitor.gate import Gate
+
+    bot.gate = Gate(bot)  # «рестарт»: память пуста, БД та же
+    monkeypatch.setattr(bot.gate, "check", check)
+    await bot.gate.sweep(GUILD)
+    assert len(out) == 1
+    changed = "<@1> ↔ **X**: Критерии впуска не пройдены: правок 5 < 101."
+
+    async def check2(m):
+        return changed
+
+    monkeypatch.setattr(bot.gate, "check", check2)
+    bot.gate.last.clear()
+    await bot.gate.sweep(GUILD)
+    assert len(out) == 2  # новый итог по тому же участнику сообщаем
+
+
+async def test_quiet_verdict_has_no_report_tail(bot):
+    v = await bot.evaluate(member("🆕 new user"), info(groups=["sysop"]), "X", quiet=True)
+    assert "служебном канале" not in v.text and "было бы:" in v.text
+
+
+async def test_sync_warns_about_dropped_checkmark(bot, monkeypatch):
+    """/sync называет тех, у кого отказ по правилу снимет ✔ (ручные исключения модераторов)."""
+    sent = []
+
+    async def send(text, **kw):
+        sent.append(text)
+
+    async def defer(**kw):
+        pass
+
+    async def all_links():
+        return [(1, "Новичок")]
+
+    async def mem(gid, did):
+        return member("✔")
+
+    async def users_info(names, **kw):
+        return {"Новичок": info(name="Новичок", editcount=5, registration="2025-10-01T00:00:00Z")}
+
+    monkeypatch.setattr(bot.store, "all_links", all_links)
+    monkeypatch.setattr(bot, "member", mem)
+    monkeypatch.setattr(bot.wiki, "users_info", users_info)
+    capture(bot)
+    inter = SimpleNamespace(guild_id=GUILD, response=SimpleNamespace(defer=defer), followup=SimpleNamespace(send=send))
+    await bot.tree.get_command("sync").callback(inter)
+    assert "✔ потеряли бы 1" in sent[0] and "Новичок" in sent[0]
