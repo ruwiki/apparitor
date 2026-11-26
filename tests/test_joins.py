@@ -471,3 +471,14 @@ async def test_join_due_kept_when_process_stops_mid_wait(jbot):
         t.cancel()  # выкат: процесс гасят, таймер обрывается
     await asyncio.gather(*list(jbot._tasks), return_exceptions=True)
     assert [(g, d) for g, d, _ in await jbot.store.join_due_all()] == [(GUILD, 7)]
+
+
+async def test_resumed_join_role_respects_feature_off(jbot):
+    capture(jbot)
+    m = make_member(make_guild())
+    jbot.people[7] = m
+    await jbot.store.join_due_set(GUILD, 7, "2000-01-01T00:00:00Z")
+    jbot.cfg.guild[GUILD].features.pop("join_roles")
+    await jbot.joins.resume()
+    await settle(jbot)
+    assert m.added == [] and await jbot.store.join_due_all() == []

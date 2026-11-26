@@ -92,7 +92,7 @@ class Joins:
         try:
             await asyncio.sleep(delay)
             m = await self.bot.member(gid, mid)  # за это время мог выйти
-            if m:
+            if m and self.bot.feature(gid, "join_roles") != "off":  # после рестарта функцию могли выключить
                 g = self.bot.gcfg(gid)
                 names = list(g.join_roles)
                 if g.roles.get("admitted") in {r.name for r in m.roles}:

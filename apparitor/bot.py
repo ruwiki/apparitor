@@ -248,8 +248,6 @@ class Apparitor(discord.Client):
         roles = f"выдать {listed(d.add)}, снять {listed(d.remove)}" + (
             f", на сервере нет {listed(missing)}" if missing else ""
         )
-        if self_confirmed and not dry and (hint := self.channels_hint(gid)):
-            roles += f"\n{hint}"
         if dry:
             if quiet:  # строку в служебный канал шлёт вызывающий: «отчёт в служебном канале» было бы дублем
                 return Verdict(f"роли не менялись, было бы: {roles}.", d.changes, mods=mods)
@@ -258,7 +256,8 @@ class Apparitor(discord.Client):
                 d.changes,
                 mods=mods,
             )
-        return Verdict(f"Роли: {roles}.", d.changes, mods=mods)
+        hint = self.channels_hint(gid) if self_confirmed else ""
+        return Verdict(f"Роли: {roles}." + (f"\n{hint}" if hint else ""), d.changes, mods=mods)
 
     def channels_hint(self, guild_id: int) -> str:
         """Впущенному: ✔ сам каналы не открывает, их дают реакции в канале ролей (25.11 впущенный счёл, что не впущен).

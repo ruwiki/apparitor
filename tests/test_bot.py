@@ -213,6 +213,7 @@ async def test_admitted_by_login_is_told_where_channels_open(bot, monkeypatch):
     m, _, _ = recording(bot, monkeypatch)
     v = await bot.evaluate(m, info(editcount=500), "X", self_confirmed=True)
     assert f"https://discord.com/channels/{GUILD}/768773664949927946" in v.text and "🇦 откроет все каналы" in v.text
+    assert v.text.startswith("Роли: выдать ✔, снять 🆕 new user.\n") and v.text.endswith("по одному.")
     m, _, _ = recording(bot, monkeypatch)
     assert "channels" not in (await bot.evaluate(m, info(editcount=500), "X")).text  # /sync, обход — холостые
     m, _, _ = recording(bot, monkeypatch)
