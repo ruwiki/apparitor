@@ -1,8 +1,10 @@
 import asyncio
+import datetime as dt
 import json
 from pathlib import Path
 from types import SimpleNamespace
 
+import discord
 import pytest
 
 from apparitor.config import load_config
@@ -159,6 +161,7 @@ def test_bad_feature_in_config(tmp_path):
 async def test_join_dry_parity(jbot):
     """dry: бот пишет, что выдал бы, и через паузу сверяет с Carl: совпало или расхождение."""
     out = capture(jbot)
+    set_mode(jbot, join_roles="dry")
     guild = make_guild()
     m = make_member(guild)
     jbot.people[7] = m
@@ -181,7 +184,8 @@ async def test_join_live_gives_roles_and_greets(jbot):
     set_mode(jbot, join_roles="live", welcome="live")
     m = make_member(guild)
     await jbot.joins.joined(m)
-    assert m.added == ["🆕 new user"] and "выдал 🆕 new user" in out[-1]
+    assert m.added == ["🆕 new user"]
+    assert not any("выдал" in line for line in out)  # 🆕 каждому входящему — без строки модераторам
     text, kw = chan.sent[0]
     assert text.startswith("<:wikipetan") and "<@7>, пожалуйста" in text and kw["allowed_mentions"].users == [m]
 
@@ -200,7 +204,7 @@ async def test_sticky_leave_then_return(jbot):
     out = capture(jbot)
     chan = Chan()
     guild = make_guild(chan=chan)
-    set_mode(jbot, sticky_roles="live", farewell="live")
+    set_mode(jbot, sticky_roles="live", farewell="live", join_roles="off")
     leaving = make_member(guild, roles=[EVERYONE, OK, THEME, MOD, ADM, BOTROLE, HIGH])
     await jbot.joins.left(leaving)
     assert await jbot.store.sticky_get(GUILD, 7) == [12, 33, 84, 78, 99]
@@ -257,6 +261,7 @@ def reaction(mid, emoji, member, user=7):
 async def test_config_reaction_dry_and_live(jbot):
     out = capture(jbot)
     guild = make_guild(roles=[EVERYONE, SimpleNamespace(**{**vars(NEW), "name": "all"})])
+    set_mode(jbot, reaction_roles="dry")
     m = make_member(guild)
     jbot.people[7] = m
     mid = 1017476950408835182
@@ -363,6 +368,7 @@ async def test_parity_explains_false_mismatches(jbot):
         role(int(r["id"]), r["name"]) for r in server if r["name"] in ("all", "votings subscribe")
     ]
     guild = make_guild(roles=roles)
+    set_mode(jbot, reaction_roles="dry")
     # 1) поставил и тут же снял: Carl роль не выдал — это не ошибка
     m = make_member(guild)
     jbot.people[7] = m
@@ -381,3 +387,87 @@ async def test_parity_explains_false_mismatches(jbot):
     await settle(jbot)
     line = has(out, "не выдал бы")
     assert "РАСХОЖДЕНИЕ: Carl не снял votings subscribe (роль была и до реакции)" in line
+
+
+async def test_join_role_skipped_when_admitted_meanwhile(jbot):
+    """Впущенный по /login за 240 с ожидания 🆕 не получает: иначе ✔ + 🆕 открывают старый #welcome (25.11)."""
+    out = capture(jbot)
+    jbot.cfg.guild[GUILD].join_delay = 0.05
+    set_mode(jbot, join_roles="live")
+    m = make_member(make_guild())
+    jbot.people[7] = m
+    await jbot.joins.joined(m)
+    m.roles.append(OK)  # /login прошёл, пока ждали
+    await settle(jbot)
+    assert m.added == [] and out == []
+    assert await jbot.store.join_due_all() == []  # выдача закрыта и в БД
+    set_mode(jbot, join_roles="dry")
+    await jbot.joins.joined(m)
+    await settle(jbot)
+    assert "🆕 new user не выдал бы — уже впущен" in has(out, "[холостой] вход <@7>")
+
+
+async def test_join_role_survives_restart(jbot):
+    """Срок выдачи — в БД: новый процесс (resume) выдаёт просроченную 🆕 сразу, а идущий таймер не дублирует."""
+    capture(jbot)
+    set_mode(jbot, join_roles="live")
+    m = make_member(make_guild())
+    jbot.people[7] = m
+    await jbot.store.join_due_set(GUILD, 7, "2000-01-01T00:00:00Z")  # прошлый процесс умер, не дождавшись
+    await jbot.store.join_due_set(GUILD, 99, "2000-01-01T00:00:00Z")  # этот уже ушёл с сервера
+    await jbot.joins.resume()
+    await jbot.joins.resume()  # on_ready бывает и после переподключения
+    await settle(jbot)
+    assert m.added == ["🆕 new user"] and await jbot.store.join_due_all() == []
+
+
+def joined_member(guild, roles, minutes_ago):
+    m = make_member(guild, roles=roles)
+    m.joined_at = dt.datetime.now(dt.UTC) - dt.timedelta(minutes=minutes_ago)
+    return m
+
+
+async def test_late_new_user_role_from_carl_removed_only_right_after_join(jbot):
+    """Carl выдаёт 🆕 по таймеру и уже впущенному: такая 🆕 в первые 15 минут снимается; позже — решение человека."""
+    out = capture(jbot)
+    set_mode(jbot, join_roles="live")
+    guild = make_guild()
+    before = joined_member(guild, [EVERYONE, OK], 4)
+    after = joined_member(guild, [EVERYONE, OK, NEW], 4)
+    await jbot.joins.updated(before, after)
+    assert after.removed == ["🆕 new user"] and out == []
+    late = joined_member(guild, [EVERYONE, OK, NEW], 60)  # модератор выдал через час — не трогаем
+    await jbot.joins.updated(joined_member(guild, [EVERYONE, OK], 60), late)
+    fresh = joined_member(guild, [EVERYONE, NEW], 4)  # не впущен — 🆕 ему и положена
+    await jbot.joins.updated(joined_member(guild, [EVERYONE], 4), fresh)
+    set_mode(jbot, join_roles="dry")
+    dry = joined_member(guild, [EVERYONE, OK, NEW], 4)
+    await jbot.joins.updated(before, dry)
+    assert late.removed == [] and fresh.removed == [] and dry.removed == []
+
+
+async def test_config_reaction_live_logs_and_reports_forbidden(jbot):
+    out = capture(jbot)
+    set_mode(jbot, reaction_roles="live")
+    guild = make_guild(roles=[EVERYONE, role(2, "all")])
+    m = make_member(guild)
+
+    async def forbidden(*rs, reason=""):
+        raise discord.Forbidden(SimpleNamespace(status=403, reason="Forbidden"), "Missing Permissions")
+
+    m.add_roles = forbidden
+    await jbot.rooms.reaction(reaction(1017476950408835182, "🇦", m), True)
+    assert "нет права выдать «all»" in out[-1]
+
+
+async def test_join_due_kept_when_process_stops_mid_wait(jbot):
+    capture(jbot)
+    jbot.cfg.guild[GUILD].join_delay = 30
+    set_mode(jbot, join_roles="live")
+    m = make_member(make_guild())
+    await jbot.joins.joined(m)
+    await asyncio.sleep(0.05)
+    for t in list(jbot._tasks):
+        t.cancel()  # выкат: процесс гасят, таймер обрывается
+    await asyncio.gather(*list(jbot._tasks), return_exceptions=True)
+    assert [(g, d) for g, d, _ in await jbot.store.join_due_all()] == [(GUILD, 7)]

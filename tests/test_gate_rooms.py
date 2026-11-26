@@ -282,3 +282,33 @@ async def test_import_does_not_overwrite_link_made_meanwhile(bot, monkeypatch):
     monkeypatch.setattr(bot, "get_guild", lambda gid: guild)
     head, _ = await bot.gate.import_links(GUILD)
     assert await bot.store.wiki_of(2) == "Из логина" and "импортировано 0" in head and "не тронута) 1" in head
+
+
+def test_gate_digest_ignores_numbers():
+    """Отказ «аккаунту 319 дн.» назавтра становится «320 дн.» — это тот же итог, повторно в канал не идёт."""
+    from apparitor.gate import Gate
+
+    a = Gate.digest("<@1> (x) ↔ **X**: Критерии впуска не пройдены: аккаунту 319 дн. < 365.")
+    b = Gate.digest("<@1> (x) ↔ **X**: Критерии впуска не пройдены: аккаунту 320 дн. < 365.")
+    c = Gate.digest("<@1> (x) ↔ **X**: Критерии впуска не пройдены: аккаунт заблокирован.")
+    assert a == b != c
+
+
+async def test_import_without_news_stays_out_of_channel(bot, monkeypatch):
+    out = capture(bot)
+
+    async def whois(gid, did):
+        return None
+
+    monkeypatch.setattr(bot.gate.wab, "whois", whois)
+    bot.gate.pace = 0
+    monkeypatch.setattr(bot, "get_guild", lambda gid: SimpleNamespace(members=[SimpleNamespace(id=3, bot=False)]))
+    await bot.gate.run_import(GUILD)
+    assert out == []  # связки нет ни у кого: только журнал бота
+
+    async def whois2(gid, did):
+        raise RuntimeError("503")
+
+    monkeypatch.setattr(bot.gate.wab, "whois", whois2)
+    await bot.gate.run_import(GUILD)
+    assert "ошибок 1" in out[-1]

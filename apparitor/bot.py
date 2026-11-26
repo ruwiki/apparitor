@@ -51,7 +51,11 @@ class Apparitor(discord.Client):
         task.add_done_callback(self._tasks.discard)
 
     async def on_ready(self):
-        """Кэш серверов готов: строки выхода из readme и announcements — в сообщение бота в канале ролей."""
+        """Кэш серверов готов: недоданные до рестарта 🆕; строки выхода из readme и announcements."""
+        try:
+            await self.joins.resume()
+        except Exception:
+            log.exception("возобновление отложенных ролей входа")
         for gid in self.cfg.guilds:
             if guild := self.get_guild(gid):
                 try:
@@ -83,6 +87,10 @@ class Apparitor(discord.Client):
     async def on_member_join(self, m: discord.Member):
         if m.guild.id in self.cfg.guilds:
             await self.joins.joined(m)
+
+    async def on_member_update(self, before: discord.Member, after: discord.Member):
+        if after.guild.id in self.cfg.guilds:
+            await self.joins.updated(before, after)
 
     async def on_member_remove(self, m: discord.Member):
         if m.guild.id in self.cfg.guilds:
@@ -240,6 +248,8 @@ class Apparitor(discord.Client):
         roles = f"выдать {listed(d.add)}, снять {listed(d.remove)}" + (
             f", на сервере нет {listed(missing)}" if missing else ""
         )
+        if self_confirmed and not dry and (hint := self.channels_hint(gid)):
+            roles += f"\n{hint}"
         if dry:
             if quiet:  # строку в служебный канал шлёт вызывающий: «отчёт в служебном канале» было бы дублем
                 return Verdict(f"роли не менялись, было бы: {roles}.", d.changes, mods=mods)
@@ -249,6 +259,20 @@ class Apparitor(discord.Client):
                 mods=mods,
             )
         return Verdict(f"Роли: {roles}.", d.changes, mods=mods)
+
+    def channels_hint(self, guild_id: int) -> str:
+        """Впущенному: ✔ сам каналы не открывает, их дают реакции в канале ролей (25.11 впущенный счёл, что не впущен).
+        Ссылкой, а не <#id>: текст уходит и в Discord, и на страницу после входа через Мету."""
+        g = self.gcfg(guild_id)
+        if not g.roles_channel_id:
+            return ""
+        url = f"https://discord.com/channels/{guild_id}/{g.roles_channel_id}"
+        everything = next(
+            (e for t in g.reaction_roles.values() for e, r in t.items() if r == g.board_open_role and not e.isdigit()),
+            None,
+        )
+        pick = f"реакция {everything} откроет все каналы сразу, остальные — по одному" if everything else "по реакциям"
+        return f"Каналы сервера открываются в канале ролей: {url} — {pick}."
 
     @staticmethod
     def mods_line(d: Decision) -> str:

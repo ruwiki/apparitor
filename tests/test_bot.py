@@ -206,3 +206,14 @@ async def test_oauth_callback_and_confirm_are_self_confirmed(bot, monkeypatch):
     )
     await bot.tree.get_command("confirm").callback(inter)
     assert calls == [("add", ["✔"]), ("remove", ["🆕 new user"])] and "Роли: выдать ✔" in sent[0]
+
+
+async def test_admitted_by_login_is_told_where_channels_open(bot, monkeypatch):
+    """✔ каналы не открывает: впущенному по /login или /confirm бот говорит про канал ролей и реакцию «all»."""
+    m, _, _ = recording(bot, monkeypatch)
+    v = await bot.evaluate(m, info(editcount=500), "X", self_confirmed=True)
+    assert f"https://discord.com/channels/{GUILD}/768773664949927946" in v.text and "🇦 откроет все каналы" in v.text
+    m, _, _ = recording(bot, monkeypatch)
+    assert "channels" not in (await bot.evaluate(m, info(editcount=500), "X")).text  # /sync, обход — холостые
+    m, _, _ = recording(bot, monkeypatch)
+    assert "channels" not in (await bot.evaluate(m, info(editcount=5), "X", self_confirmed=True)).text  # отказ

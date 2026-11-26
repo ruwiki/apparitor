@@ -76,9 +76,9 @@ steward = "Стюард"
 welcome = "live"
 optout = "live"
 admit = "live"
-join_roles = "dry"
-sticky_roles = "dry"
-reaction_roles = "dry"
+join_roles = "live"
+sticky_roles = "live"
+reaction_roles = "live"
 starboard = "dry"
 
 # белый список сообщения: реакция работает только у держателей одной из ролей (у Carl так на сообщении подписок)

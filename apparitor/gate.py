@@ -8,6 +8,7 @@ import datetime as dt
 import hashlib
 import io
 import logging
+import re
 from typing import TYPE_CHECKING
 
 import discord
@@ -32,6 +33,7 @@ class Gate:
         self.wab = WikiAuthBot(UA)
         self.pace = 0.7  # секунд между запросами к WikiAuthBot при импорте (как в аудите 23.11)
         self.imported: dict[int, dt.datetime] = {}  # server id -> когда запускали импорт связок
+        self.counts: dict[int, dict[str, int]] = {}  # server id -> счётчики последнего импорта
         self.last: dict[int, dt.datetime] = {}  # discord_id -> когда спрашивали WikiAuthBot
         self.told: dict[int, str] | None = None  # discord_id -> отпечаток последнего отчёта; живёт и в БД, чтобы
         # после рестарта не слать всё заново
@@ -60,7 +62,8 @@ class Gate:
 
     @staticmethod
     def digest(line: str) -> str:
-        return hashlib.blake2b(line.encode(), digest_size=16).hexdigest()
+        """Без чисел: «аккаунту 319 дн.» и «320 дн.» — один и тот же итог, второй раз его не шлём."""
+        return hashlib.blake2b(re.sub(r"\d+", "#", line).encode(), digest_size=16).hexdigest()
 
     async def sweep(self, gid: int) -> None:
         if self.told is None:
@@ -103,6 +106,8 @@ class Gate:
             log.exception("импорт связок %s", gid)
             self.imported.pop(gid, None)  # повторим на следующем обходе
             return
+        if not any(v for k, v in self.counts.get(gid, {}).items() if k != "no_link"):
+            return  # ничего нового: итог только в журнале бота, служебный канал не засоряем
         file = discord.File(io.BytesIO(body.encode()), filename=f"import-{gid}.txt") if body else None
         await self.bot.report(gid, head, file=file)
 
@@ -142,6 +147,7 @@ class Gate:
             f"в WikiAuthBot связки нет {n['no_link']}; имя по номеру не найдено {n['no_name']}; ошибок {n['errors']}; "
             f"связка появилась за время импорта (не тронута) {n['raced']}."
         )
+        self.counts[gid] = n
         await self.bot.store.log("gate", "import-links", str(gid), head)
         return head, "\n".join(lines) if self.bot.gcfg(gid).report_names else ""
 

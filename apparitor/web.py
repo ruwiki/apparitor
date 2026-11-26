@@ -9,6 +9,7 @@ import secrets
 
 from aiohttp import ClientSession, web
 
+from .config import FEATURES
 from .models import PENDING_TTL
 
 META = "https://meta.wikimedia.org/w/rest.php/oauth2"
@@ -30,9 +31,19 @@ def make_app(bot) -> web.Application:
 
 
 async def index(req: web.Request) -> web.Response:
+    """Режим по каждому серверу и функции: общий dry_run давно не говорит, что бот делает на самом деле."""
     bot = req.app[BOT]
-    mode = "холостой" if bot.cfg.dry_run else "боевой"
-    return web.Response(text=f"Apparitor: бот доступов АК рувики. Режим: {mode}. Код: {bot.cfg.repo_url}\n")
+    word = {"live": "боевой", "dry": "холостой", "off": "выключено"}
+    lines = [f"Apparitor: бот доступов рувики. Код: {bot.cfg.repo_url}"]
+    for gid in bot.cfg.guilds:
+        g = bot.get_guild(gid) if bot.is_ready() else None
+        rest = "холостой" if bot.dry(gid) else "боевой"
+        lines.append(f"\n{g.name if g else gid}: /sync, /link, обход, реакции на сообщениях бота — {rest}")
+        lines.append(f"  впуск по /login и /confirm — {'холостой' if bot.dry_admit(gid) else 'боевой'}")
+        for name in FEATURES:
+            if name != "admit":
+                lines.append(f"  {name} — {word[bot.feature(gid, name)]}")
+    return web.Response(text="\n".join(lines) + "\n")
 
 
 async def healthz(req: web.Request) -> web.Response:

@@ -34,6 +34,8 @@ SCHEMA = {
                          left_at varchar(20) not null, primary key (guild_id, discord_id))""",
     "board": """(guild_id bigint not null, message_id bigint primary key, line_id bigint not null,
                  forward_id bigint not null, stars int not null, posted_at varchar(20) not null)""",
+    "join_due": """(guild_id bigint not null, discord_id bigint not null, due_at varchar(20) not null,
+                    primary key (guild_id, discord_id))""",
     "gate_told": """(discord_id bigint primary key, digest varchar(32) not null, at varchar(20) not null)""",
     "log": """(id integer primary key {autoinc}, ts varchar(20), actor varchar(32), action varchar(32),
                target varchar(255), detail text)""",
@@ -220,6 +222,21 @@ class Store:
             self._upsert_sql("gate_told", "discord_id, digest, at", 3),
             (discord_id, digest, now_ts()),
         )
+
+    # --- отложенные роли входа (🆕 через join_delay): переживают рестарт ------------------------
+    async def join_due_set(self, guild_id: int, discord_id: int, due_at: str) -> None:
+        await self._run(
+            self._exec,
+            self._upsert_sql("join_due", "guild_id, discord_id, due_at", 3),
+            (guild_id, discord_id, due_at),
+        )
+
+    async def join_due_delete(self, guild_id: int, discord_id: int) -> None:
+        await self._run(self._exec, "delete from join_due where guild_id=? and discord_id=?", (guild_id, discord_id))
+
+    async def join_due_all(self) -> list[tuple[int, int, str]]:
+        rows = await self._run(lambda: self._exec("select guild_id, discord_id, due_at from join_due").fetchall())
+        return [(int(a), int(b), c) for a, b, c in rows]
 
     # --- роли ушедшего участника: вернуть при повторном входе ---------------------------------
     async def sticky_save(self, guild_id: int, discord_id: int, role_ids: list[int]) -> None:

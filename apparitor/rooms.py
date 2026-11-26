@@ -224,10 +224,18 @@ class Rooms:
             )
         elif denied:
             return  # убрать чужую реакцию без права Manage Messages нельзя; роль просто не выдаём
-        elif added:
-            await member.add_roles(found[0], reason="Apparitor: вход по реакции")
         else:
-            await member.remove_roles(found[0], reason="Apparitor: выход по реакции")
+            try:
+                if added:
+                    await member.add_roles(found[0], reason="Apparitor: вход по реакции")
+                else:
+                    await member.remove_roles(found[0], reason="Apparitor: выход по реакции")
+            except discord.Forbidden:
+                await self.bot.report(
+                    gid, f"Реакция {p.emoji} {member.mention}: нет права {'выдать' if added else 'снять'} «{name}»."
+                )
+                return
+            await self.bot.store.log(str(member.id), "reaction-role", "+" if added else "-", name)
 
     async def optout(self, member: discord.Member, on: bool, cid: int, p: discord.RawReactionActionEvent) -> None:
         """Реакция на строке выхода: поставили — канал прячется (запрет VIEW на участника, остальные его записи
